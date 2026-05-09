@@ -1,11 +1,9 @@
 import { PrismaClient } from "@/generated/prisma/client";
-import { PrismaSqlite } from "prisma-adapter-sqlite";
+import { PrismaNeonHttp } from "@prisma/adapter-neon";
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
-const adapter = new PrismaSqlite({
-  url: process.env.DATABASE_URL || "file:./dev.db",
-});
+const adapter = new PrismaNeonHttp(process.env.DATABASE_URL!, {});
 
 export const prisma = globalForPrisma.prisma || new PrismaClient({ adapter });
 
