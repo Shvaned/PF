@@ -1,0 +1,207 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id            String    @id @default(uuid())
+  firebaseUid   String?   @unique
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  dob           String?
+  isPremium     Boolean   @default(false)
+  isGuest       Boolean   @default(false)
+  dailyUsage    Int       @default(0)
+  usageDate     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts       Account[]
+  sessions       Session[]
+  resumes        Resume[]
+  jobDescriptions JobDescription[]
+  analyses       Analysis[]
+  interviewPreps InterviewPrep[]
+  mockInterviews MockInterview[]
+  weakAreas      WeakArea[]
+  subscription   Subscription?
+  usageLogs      UsageLog[]
+  bookmarks      Bookmark[]
+}
+
+model Account {
+  id                String  @id @default(uuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Resume {
+  id         String   @id @default(uuid())
+  userId     String
+  content    String
+  fileName   String?
+  parsedText String?
+  createdAt  DateTime @default(now())
+
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analyses Analysis[]
+}
+
+model JobDescription {
+  id        String   @id @default(uuid())
+  userId    String
+  content   String
+  category  String?
+  createdAt DateTime @default(now())
+
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analyses Analysis[]
+}
+
+model Analysis {
+  id               String   @id @default(uuid())
+  userId           String
+  resumeId         String
+  jobDescriptionId String
+  matchScore       Int
+  strengths        String
+  missingKeywords  String
+  weakAreas        String
+  resumeImprovements String
+  summary          String
+  questions        String
+  answerGuidance   String
+  jobCategory      String?
+  createdAt        DateTime @default(now())
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resume         Resume         @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  jobDescription JobDescription @relation(fields: [jobDescriptionId], references: [id], onDelete: Cascade)
+  interviewPreps InterviewPrep[]
+}
+
+model InterviewPrep {
+  id         String   @id @default(uuid())
+  userId     String
+  analysisId String
+  status     String   @default("active")
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analysis Analysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+}
+
+model MockInterview {
+  id             String    @id @default(uuid())
+  userId         String
+  difficulty     String    @default("standard")
+  questionTypes  String    @default("mixed")
+  questionCount  Int       @default(5)
+  currentIndex   Int       @default(0)
+  questions      String
+  scores         String?
+  feedback       String?
+  status         String    @default("in_progress")
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers  MockAnswer[]
+}
+
+model MockAnswer {
+  id              String   @id @default(uuid())
+  mockInterviewId String
+  question        String
+  userAnswer      String
+  feedback        String?
+  scores          String?
+  createdAt       DateTime @default(now())
+
+  mockInterview MockInterview @relation(fields: [mockInterviewId], references: [id], onDelete: Cascade)
+}
+
+model WeakArea {
+  id        String   @id @default(uuid())
+  userId    String
+  area      String
+  category  String
+  count     Int      @default(1)
+  lastSeen  DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Subscription {
+  id                   String    @id @default(uuid())
+  userId               String    @unique
+  paddleSubscriptionId String?
+  paddleCustomerId     String?
+  status               String    @default("inactive")
+  planId               String?
+  currentPeriodEnd     DateTime?
+  canceledAt           DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UsageLog {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Bookmark {
+  id         String   @id @default(uuid())
+  userId     String
+  question   String
+  guidance   String?
+  analysisId String?
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, question])
+}
