@@ -11,8 +11,8 @@ export default function Footer() {
           </p>
           <p className="text-xs text-[#9CA3AF] mt-1">
             contact:{" "}
-            <a href="mailto:prepfitapp@gmail.com" className="text-[#2563EB] hover:underline">
-              prepfitapp@gmail.com
+            <a href="mailto:support.prepfit@gmail.com" className="text-[#2563EB] hover:underline">
+              support.prepfit@gmail.com
             </a>
             {" "}· Operated from India
           </p>
