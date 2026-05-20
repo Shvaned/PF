@@ -71,7 +71,10 @@ export default async function PremiumPage() {
             </Button>
           </Card>
           <p className="text-xs text-[#9CA3AF]">
-            Secure payment powered by Paddle. By subscribing you agree to our terms.
+            Secure payment powered by Paddle. By subscribing you agree to our{" "}
+            <a href="/terms" className="text-[#2563EB] hover:underline">Terms</a>,{" "}
+            <a href="/privacy" className="text-[#2563EB] hover:underline">Privacy Policy</a>, and{" "}
+            <a href="/refund-policy" className="text-[#2563EB] hover:underline">Refund Policy</a>.
           </p>
         </div>
       )}

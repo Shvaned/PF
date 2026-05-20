@@ -98,7 +98,10 @@ export default function OnboardingPage() {
         </div>
 
         <p className="mt-6 text-xs text-[#9CA3AF]">
-          By continuing, you agree to our Terms and Privacy Policy.
+          By continuing, you agree to our{" "}
+          <Link href="/terms" className="text-[#2563EB] hover:underline">Terms</Link>{" "}
+          and{" "}
+          <Link href="/privacy" className="text-[#2563EB] hover:underline">Privacy Policy</Link>.
         </p>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Providers from "@/components/Providers";
+import Footer from "@/components/ui/Footer";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -18,8 +19,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
         />
       </head>
-      <body className="font-sans">
+      <body className="font-sans flex flex-col min-h-screen">
         <Providers>{children}</Providers>
+        <Footer />
       </body>
     </html>
   );
