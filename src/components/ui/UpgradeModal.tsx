@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Button from "./Button";
+import { openPaddleCheckout } from "@/lib/paddle-client";
 
 interface UpgradeModalProps {
   open: boolean;
@@ -17,6 +18,8 @@ export default function UpgradeModal({
   description = "Practice AI interviews with scoring, track your weak areas, and get a final report.",
 }: UpgradeModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutError, setCheckoutError] = useState("");
 
   useEffect(() => {
     if (open) {
@@ -36,6 +39,33 @@ export default function UpgradeModal({
     if (open) document.addEventListener("keydown", handleEsc);
     return () => document.removeEventListener("keydown", handleEsc);
   }, [open, onClose]);
+
+  async function handleUpgrade() {
+    setCheckoutError("");
+    setCheckoutLoading(true);
+    try {
+      const res = await fetch("/api/checkout", { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Checkout preparation failed");
+      }
+
+      const { customerId, priceId } = await res.json();
+
+      onClose();
+
+      await openPaddleCheckout({
+        customerId,
+        priceId,
+        successUrl: `${window.location.origin}/premium?checkout=success`,
+      });
+    } catch (e: any) {
+      setCheckoutError(e.message || "Could not open checkout. Please try again.");
+      console.error("Checkout error:", e);
+    } finally {
+      setCheckoutLoading(false);
+    }
+  }
 
   if (!open) return null;
 
@@ -83,9 +113,13 @@ export default function UpgradeModal({
         </div>
 
         {/* CTA */}
-        <Button href="/premium" className="w-full py-3">
-          Upgrade to Premium
+        <Button onClick={handleUpgrade} loading={checkoutLoading} className="w-full py-3">
+          {checkoutLoading ? "Opening checkout..." : "Upgrade to Premium"}
         </Button>
+
+        {checkoutError && (
+          <p className="text-red-500 text-sm mt-3 text-center">{checkoutError}</p>
+        )}
 
         <p className="text-xs text-[#9CA3AF] mt-3">
           Secure payment powered by Paddle

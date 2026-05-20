@@ -1,5 +1,9 @@
-import { getCurrentUser } from "@/lib/auth-helpers";
-import { redirect } from "next/navigation";
+"use client";
+
+import { useAuth } from "@/lib/auth-context";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { openPaddleCheckout } from "@/lib/paddle-client";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 
@@ -12,11 +16,53 @@ const features = [
   { label: "Weak area trends", free: "Locked", premium: "Included" },
 ];
 
-export default async function PremiumPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/onboarding");
+function PremiumContent() {
+  const { user } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const checkoutSuccess = searchParams.get("checkout") === "success";
 
-  const isPremium = user.isPremium;
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutError, setCheckoutError] = useState("");
+  const [profile, setProfile] = useState<{ isPremium: boolean }>({ isPremium: false });
+
+  useEffect(() => {
+    if (user) {
+      fetch("/api/user/me")
+        .then((r) => r.json())
+        .then((data) => {
+          if (data && !data.error) setProfile({ isPremium: data.isPremium });
+        })
+        .catch(() => {});
+    }
+  }, [user]);
+
+  const isPremium = profile.isPremium;
+
+  async function handleSubscribe() {
+    setCheckoutError("");
+    setCheckoutLoading(true);
+    try {
+      const res = await fetch("/api/checkout", { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Checkout preparation failed");
+      }
+
+      const { customerId, priceId } = await res.json();
+
+      await openPaddleCheckout({
+        customerId,
+        priceId,
+        successUrl: `${window.location.origin}/premium?checkout=success`,
+      });
+    } catch (e: any) {
+      setCheckoutError(e.message || "Could not open checkout. Please try again.");
+      console.error("Checkout error:", e);
+    } finally {
+      setCheckoutLoading(false);
+    }
+  }
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -33,6 +79,18 @@ export default async function PremiumPage() {
             : "Get the most out of your interview preparation"}
         </p>
       </div>
+
+      {/* Success banner */}
+      {checkoutSuccess && (
+        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-[14px] text-center">
+          <svg className="w-8 h-8 mx-auto mb-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <h3 className="text-[16px] font-semibold text-green-800 mb-1">Welcome to PrepFit Premium!</h3>
+          <p className="text-sm text-green-700 mb-3">Your premium features are unlocked. Start exploring now.</p>
+          <Button href="/dashboard">Go to Dashboard</Button>
+        </div>
+      )}
 
       <Card className="mb-6">
         <h3 className="text-[16px] font-medium text-[#111827] mb-4">Plan Comparison</h3>
@@ -66,9 +124,12 @@ export default async function PremiumPage() {
               <span className="text-[28px] font-bold text-[#2563EB]">$2.99/mo</span>
             </div>
             <p className="text-sm text-[#6B7280] mb-4">50% off — Cancel anytime. No commitment.</p>
-            <Button className="w-full py-3">
-              Subscribe Now
+            <Button onClick={handleSubscribe} loading={checkoutLoading} className="w-full py-3">
+              {checkoutLoading ? "Opening checkout..." : "Subscribe Now"}
             </Button>
+            {checkoutError && (
+              <p className="text-red-500 text-sm mt-3 text-center">{checkoutError}</p>
+            )}
           </Card>
           <p className="text-xs text-[#9CA3AF]">
             Secure payment powered by Paddle. By subscribing you agree to our{" "}
@@ -80,12 +141,28 @@ export default async function PremiumPage() {
       )}
 
       {isPremium && (
-        <div className="text-center">
+        <div className="text-center flex flex-col sm:flex-row gap-3 justify-center">
           <Button href="/dashboard" variant="secondary">
             Back to Dashboard
+          </Button>
+          <Button href="/settings">
+            Manage Subscription
           </Button>
         </div>
       )}
     </div>
+  );
+}
+
+export default function PremiumPage() {
+  return (
+    <Suspense fallback={
+      <div className="max-w-2xl mx-auto text-center py-12">
+        <div className="w-8 h-8 mx-auto border-2 border-[#2563EB] border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-[#6B7280] mt-4">Loading...</p>
+      </div>
+    }>
+      <PremiumContent />
+    </Suspense>
   );
 }
