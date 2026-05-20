@@ -107,7 +107,7 @@ export default function TermsPage() {
             <section>
               <h2 className="text-[16px] font-medium text-[#111827] mb-2">10. Governing Law</h2>
               <p className="text-sm text-[#6B7280] leading-relaxed">
-                These terms are governed by the laws of the United States without regard to conflict of law principles.
+                These terms are governed by the laws of India without regard to conflict of law principles.
                 Any disputes shall be resolved through binding arbitration on an individual basis.
               </p>
             </section>
