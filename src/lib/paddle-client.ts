@@ -47,11 +47,18 @@ export async function openPaddleCheckout({
 
     if (!initialized) {
       const token = process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN;
+      const env = process.env.NEXT_PUBLIC_PADDLE_ENVIRONMENT || "sandbox";
       if (token) {
-        Paddle.Initialize({ token });
+        Paddle.Initialize({ token, environment: env });
+        console.log("[Paddle] Initialized", { environment: env, hasToken: !!token });
+      } else {
+        console.warn("[Paddle] No client token — checkout may fail");
       }
       initialized = true;
     }
+
+    const url = successUrl || `${window.location.origin}/premium?checkout=success`;
+    console.log("[Paddle] Opening checkout", { priceId, customerId, successUrl: url });
 
     Paddle.Checkout.open({
       items: [{ priceId, quantity: 1 }],
@@ -60,7 +67,7 @@ export async function openPaddleCheckout({
       settings: {
         displayMode: "overlay",
         theme: "light",
-        successUrl: successUrl || `${window.location.origin}/premium?checkout=success`,
+        successUrl: url,
       },
     });
   } catch (error) {
