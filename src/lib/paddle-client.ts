@@ -47,10 +47,9 @@ export async function openPaddleCheckout({
 
     if (!initialized) {
       const token = process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN;
-      const env = process.env.NEXT_PUBLIC_PADDLE_ENVIRONMENT || "sandbox";
       if (token) {
-        Paddle.Initialize({ token, environment: env });
-        console.log("[Paddle] Initialized", { environment: env, hasToken: !!token });
+        Paddle.Initialize({ token });
+        console.log("[Paddle] Initialized", { hasToken: !!token, tokenPrefix: token.slice(0, 5) });
       } else {
         console.warn("[Paddle] No client token — checkout may fail");
       }
