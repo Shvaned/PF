@@ -21,6 +21,7 @@ export async function POST(request: Request) {
     const sessionToken = await new SignJWT({
       firebaseToken: token,
       uid: payload.sub,
+      firebaseExp: payload.exp,
     })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()

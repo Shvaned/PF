@@ -48,7 +48,7 @@ export default function RefundPolicyPage() {
               <h2 className="text-[16px] font-medium text-[#111827] mb-2">3. How to Request a Refund</h2>
               <p className="text-sm text-[#6B7280] leading-relaxed">
                 To request a refund, email{" "}
-                <a href="mailto:billing@prepfit.app" className="text-[#2563EB] hover:underline">billing@prepfit.app</a>{" "}
+                <a href="mailto:support.prepfit@gmail.com" className="text-[#2563EB] hover:underline">support.prepfit@gmail.com</a>{" "}
                 with the following information:
               </p>
               <ul className="text-sm text-[#6B7280] space-y-1 list-disc pl-5 mt-2">
