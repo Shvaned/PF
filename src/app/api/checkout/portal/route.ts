@@ -1,7 +1,9 @@
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 
-const PADDLE_API = "https://api.paddle.com";
+const PADDLE_API = process.env.PADDLE_API_KEY?.startsWith("apikey_test_") || process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN?.startsWith("test_")
+  ? "https://sandbox-api.paddle.com"
+  : "https://api.paddle.com";
 
 export async function POST() {
   const user = await getCurrentUser();

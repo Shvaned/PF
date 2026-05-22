@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 
-const PADDLE_API = "https://api.paddle.com";
+const PADDLE_API = process.env.PADDLE_API_KEY?.startsWith("apikey_test_") || process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN?.startsWith("test_")
+  ? "https://sandbox-api.paddle.com"
+  : "https://api.paddle.com";
 
 function paddleHeaders() {
   return {
@@ -19,7 +21,11 @@ export async function createPaddleCustomer(userId: string, email: string): Promi
     body: JSON.stringify({ email }),
   });
 
-  if (!res.ok) throw new Error(`Paddle customer creation failed: ${res.statusText}`);
+  if (!res.ok) {
+    const errBody = await res.text();
+    console.error("Paddle customer creation failed", { status: res.status, body: errBody, api: PADDLE_API });
+    throw new Error(`Paddle customer creation failed: ${res.status} ${errBody}`);
+  }
 
   const data = await res.json();
   const customerId = data.data.id;
