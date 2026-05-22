@@ -13,7 +13,12 @@ function paddleHeaders() {
 
 export async function createPaddleCustomer(userId: string, email: string): Promise<string> {
   const existing = await prisma.subscription.findUnique({ where: { userId } });
-  if (existing?.paddleCustomerId) return existing.paddleCustomerId;
+  if (existing?.paddleCustomerId) {
+    console.log("[PADDLE] customer_skip existing", { userId, customerId: existing.paddleCustomerId });
+    return existing.paddleCustomerId;
+  }
+
+  console.log("[PADDLE] customer_create api_call", { userId, email, api: PADDLE_API });
 
   const res = await fetch(`${PADDLE_API}/customers`, {
     method: "POST",
@@ -23,13 +28,23 @@ export async function createPaddleCustomer(userId: string, email: string): Promi
 
   if (!res.ok) {
     const errBody = await res.text();
-    console.error("Paddle customer creation failed", { status: res.status, body: errBody, api: PADDLE_API });
-    throw new Error(`Paddle customer creation failed: ${res.status} ${errBody}`);
+    console.error("[PADDLE] customer_create api_error", {
+      status: res.status,
+      body: errBody.slice(0, 500),
+      api: PADDLE_API,
+      hasApiKey: !!process.env.PADDLE_API_KEY,
+    });
+    throw new Error(`Paddle customer creation failed: ${res.status} ${errBody.slice(0, 200)}`);
   }
 
   const data = await res.json();
-  const customerId = data.data.id;
+  const customerId = data?.data?.id;
+  if (!customerId) {
+    console.error("[PADDLE] customer_create missing_id", { responseKeys: Object.keys(data) });
+    throw new Error("Paddle customer creation returned no customer ID");
+  }
 
+  console.log("[PADDLE] customer_create db_upsert", { userId, customerId });
   await prisma.subscription.upsert({
     where: { userId },
     update: { paddleCustomerId: customerId },
