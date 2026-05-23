@@ -39,6 +39,28 @@ export async function createPaddleCustomer(userId: string, email: string): Promi
 
   if (!res.ok) {
     const errBody = await res.text();
+
+    // Handle duplicate email: extract existing customer ID and reuse it
+    if (res.status === 409) {
+      try {
+        const errJson = JSON.parse(errBody);
+        const detail = errJson?.error?.detail || "";
+        const match = detail.match(/ctm_[a-zA-Z0-9]+/);
+        if (match) {
+          const reusedId = match[0];
+          console.info("[PADDLE] customer_reuse_existing", { email, userId, customerId: reusedId });
+          await prisma.subscription.upsert({
+            where: { userId },
+            update: { paddleCustomerId: reusedId },
+            create: { userId, paddleCustomerId: reusedId },
+          });
+          return reusedId;
+        }
+      } catch {
+        // fall through to throw below
+      }
+    }
+
     console.error("[PADDLE] customer_create api_error", {
       status: res.status,
       body: errBody.slice(0, 500),
