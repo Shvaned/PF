@@ -3,7 +3,6 @@
 const PADDLE_JS = "https://cdn.paddle.com/paddle/v2/paddle.js";
 
 interface CheckoutOptions {
-  customerId?: string;
   email?: string;
   priceId: string;
   successUrl?: string;
@@ -34,7 +33,6 @@ function loadPaddleScript(): Promise<void> {
 }
 
 export async function openPaddleCheckout({
-  customerId,
   email,
   priceId,
   successUrl,
@@ -60,27 +58,24 @@ export async function openPaddleCheckout({
 
     const url = successUrl || `${window.location.origin}/premium?checkout=success`;
 
-    // Build customer: prefer email-only (let Paddle auto-create),
-    // fall back to ID if we have one
-    const customer: Record<string, string> = {};
-    if (email) {
-      customer.email = email;
-    } else if (customerId) {
-      customer.id = customerId;
-    }
-
-    console.log("[Paddle] Opening checkout", { priceId, hasEmail: !!email, hasCustomerId: !!customerId, successUrl: url });
-
-    Paddle.Checkout.open({
+    const payload: Record<string, any> = {
       items: [{ priceId, quantity: 1 }],
-      customer,
-      customData: email ? { email } : { userId: customerId },
       settings: {
         displayMode: "overlay",
         theme: "light",
         successUrl: url,
       },
-    });
+    };
+
+    // Only pass email for customer lookup — no stale customer IDs.
+    // Paddle auto-creates/finds the customer by email.
+    if (email) {
+      payload.customer = { email };
+    }
+
+    console.log("[PADDLE_CHECKOUT_PAYLOAD]", { priceId, hasEmail: !!email, successUrl: url });
+
+    Paddle.Checkout.open(payload);
   } catch (error) {
     console.error("Paddle checkout error:", error);
     throw error;
