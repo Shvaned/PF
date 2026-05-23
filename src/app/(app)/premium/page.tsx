@@ -49,11 +49,12 @@ function PremiumContent() {
         throw new Error(data.error || "Checkout preparation failed");
       }
 
-      const { email, priceId } = await res.json();
+      const { priceId, email, userId } = await res.json();
 
       await openPaddleCheckout({
-        email,
         priceId,
+        email,
+        userId,
         successUrl: `${window.location.origin}/premium?checkout=success`,
       });
     } catch (e: any) {

@@ -15,16 +15,6 @@ export async function POST(request: NextRequest) {
     const body = await request.text();
     const signature = request.headers.get("paddle-signature") || "";
 
-    console.log("[WEBHOOK_SECRET]", {
-      exists: !!process.env.PADDLE_WEBHOOK_SECRET,
-      length: process.env.PADDLE_WEBHOOK_SECRET?.length,
-      prefix: process.env.PADDLE_WEBHOOK_SECRET?.slice(0, 12),
-    });
-
-    console.log("[PADDLE_SIGNATURE]", {
-      header: signature.slice(0, 120),
-    });
-
     if (!process.env.PADDLE_WEBHOOK_SECRET) {
       return Response.json({ error: "Webhook not configured" }, { status: 500 });
     }
@@ -43,9 +33,29 @@ export async function POST(request: NextRequest) {
       case "subscription.activated":
       case "subscription.updated": {
         const customerId = data.customer_id;
-        const subscription = await prisma.subscription.findFirst({
+        let subscription = await prisma.subscription.findFirst({
           where: { paddleCustomerId: customerId },
         });
+
+        // First-time: no subscription exists yet. Create one from custom_data.userId
+        // which was set when Paddle.Checkout.open() was called with customData: { userId }
+        if (!subscription) {
+          const appUserId = data.custom_data?.userId;
+          if (appUserId) {
+            subscription = await prisma.subscription.create({
+              data: {
+                userId: appUserId,
+                paddleCustomerId: customerId,
+                status: data.status,
+              },
+            });
+            console.info("[WEBHOOK] subscription created from custom_data", {
+              userId: appUserId,
+              customerId,
+              subscriptionId: subscription.id,
+            });
+          }
+        }
 
         if (subscription) {
           await prisma.subscription.update({
