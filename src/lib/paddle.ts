@@ -69,34 +69,46 @@ export async function verifyWebhook(body: string, signatureHeader: string): Prom
   const secret = process.env.PADDLE_WEBHOOK_SECRET;
   if (!secret) return false;
 
-  // Paddle Billing: "ts={timestamp};h1={signature_hex}"
-  // HMAC-SHA256(secret, "{timestamp}:{rawBody}")
+  // Parse Paddle Billing signature: "ts={timestamp};h1={signature_hex}"
   const ts = signatureHeader.match(/ts=(\d+)/)?.[1];
   const h1 = signatureHeader.match(/h1=([a-f0-9]+)/)?.[1];
 
-  console.log("[WEBHOOK] verify", {
-    hasSecret: !!secret,
-    secretLen: secret.length,
-    hasTs: !!ts,
-    hasH1: !!h1,
-    bodyLen: body.length,
-  });
-
-  if (!ts || !h1) return false;
+  if (!ts || !h1) {
+    console.error("[WEBHOOK] verify parse_failed", { headerPreview: signatureHeader.slice(0, 80) });
+    return false;
+  }
 
   const encoder = new TextEncoder();
+  const payload = `${ts}:${body}`;
+
+  // Compute HMAC-SHA256 manually so we can log the comparison
   const key = await crypto.subtle.importKey(
     "raw",
     encoder.encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["verify"]
+    ["sign"]
   );
 
-  const payload = `${ts}:${body}`;
-  const sigBytes = new Uint8Array(h1.match(/.{1,2}/g)!.map((b) => parseInt(b, 16)));
+  const computed = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
 
-  return crypto.subtle.verify("HMAC", key, sigBytes, encoder.encode(payload));
+  const computedHex = [...new Uint8Array(computed)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  const match = computedHex === h1;
+
+  console.log("[WEBHOOK_COMPARE]", {
+    receivedPrefix: h1.slice(0, 20),
+    computedPrefix: computedHex.slice(0, 20),
+    match,
+    bodyLen: body.length,
+    ts,
+    secretPrefix: secret.slice(0, 6),
+    secretLen: secret.length,
+  });
+
+  return match;
 }
 
 export function isPremiumActive(subscriptionStatus: string | null): boolean {

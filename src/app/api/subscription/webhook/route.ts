@@ -15,6 +15,16 @@ export async function POST(request: NextRequest) {
     const body = await request.text();
     const signature = request.headers.get("paddle-signature") || "";
 
+    console.log("[WEBHOOK_SECRET]", {
+      exists: !!process.env.PADDLE_WEBHOOK_SECRET,
+      length: process.env.PADDLE_WEBHOOK_SECRET?.length,
+      prefix: process.env.PADDLE_WEBHOOK_SECRET?.slice(0, 12),
+    });
+
+    console.log("[PADDLE_SIGNATURE]", {
+      header: signature.slice(0, 120),
+    });
+
     if (!process.env.PADDLE_WEBHOOK_SECRET) {
       return Response.json({ error: "Webhook not configured" }, { status: 500 });
     }
