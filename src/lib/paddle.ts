@@ -67,31 +67,23 @@ export async function createPaddleCustomer(userId: string, email: string): Promi
 
 export async function verifyWebhook(body: string, signatureHeader: string): Promise<boolean> {
   const secret = process.env.PADDLE_WEBHOOK_SECRET;
-  if (!secret) {
-    console.error("[WEBHOOK] verify missing_secret");
-    return false;
-  }
+  if (!secret) return false;
 
-  // Paddle Billing signature format: "ts={timestamp};h1={signature_hex}"
-  const parts: Record<string, string> = {};
-  for (const part of signatureHeader.split(";")) {
-    const [k, v] = part.split("=");
-    if (k && v) parts[k.trim()] = v.trim();
-  }
+  // Paddle Billing: "ts={timestamp};h1={signature_hex}"
+  // HMAC-SHA256(secret, "{timestamp}:{rawBody}")
+  const ts = signatureHeader.match(/ts=(\d+)/)?.[1];
+  const h1 = signatureHeader.match(/h1=([a-f0-9]+)/)?.[1];
 
-  const ts = parts["ts"];
-  const h1 = parts["h1"];
+  console.log("[WEBHOOK] verify", {
+    hasSecret: !!secret,
+    secretLen: secret.length,
+    hasTs: !!ts,
+    hasH1: !!h1,
+    bodyLen: body.length,
+  });
 
-  if (!ts || !h1) {
-    console.error("[WEBHOOK] verify bad_header_format", {
-      hasTs: !!ts,
-      hasH1: !!h1,
-      headerPreview: signatureHeader.slice(0, 80),
-    });
-    return false;
-  }
+  if (!ts || !h1) return false;
 
-  // Compute HMAC-SHA256(ts:body) and compare to h1
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     "raw",
@@ -102,9 +94,9 @@ export async function verifyWebhook(body: string, signatureHeader: string): Prom
   );
 
   const payload = `${ts}:${body}`;
-  const expectedSig = new Uint8Array(h1.match(/.{1,2}/g)!.map((b) => parseInt(b, 16)));
+  const sigBytes = new Uint8Array(h1.match(/.{1,2}/g)!.map((b) => parseInt(b, 16)));
 
-  return crypto.subtle.verify("HMAC", key, expectedSig, encoder.encode(payload));
+  return crypto.subtle.verify("HMAC", key, sigBytes, encoder.encode(payload));
 }
 
 export function isPremiumActive(subscriptionStatus: string | null): boolean {
