@@ -1,9 +1,21 @@
 import { prisma } from "@/lib/prisma";
 
-const PADDLE_API = "https://api.paddle.com";
+const PADDLE_API = (process.env.PADDLE_API_KEY || "").includes("sdbx")
+  ? "https://sandbox-api.paddle.com"
+  : "https://api.paddle.com";
+
+console.log("[PADDLE] init", { api: PADDLE_API });
 
 function paddleHeaders() {
-  const key = (process.env.PADDLE_API_KEY || "").trim();
+  const raw = process.env.PADDLE_API_KEY || "";
+  const key = raw.trim();
+  // Log key characteristics (never the key itself)
+  console.log("[PADDLE] auth_header", {
+    keyLength: key.length,
+    keyPrefix: key.slice(0, 11),
+    hasWhitespace: raw.length !== key.length,
+    hasBearer: true,
+  });
   return {
     "Content-Type": "application/json",
     Authorization: `Bearer ${key}`,
