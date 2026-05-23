@@ -15,12 +15,25 @@ export async function POST(request: NextRequest) {
     const body = await request.text();
     const signature = request.headers.get("paddle-signature") || "";
 
+    console.log("[WEBHOOK] received", {
+      hasSecret: !!process.env.PADDLE_WEBHOOK_SECRET,
+      secretLen: (process.env.PADDLE_WEBHOOK_SECRET || "").length,
+      bodyLen: body.length,
+      sigLen: signature.length,
+      sigPreview: signature.slice(0, 60),
+      eventType: (() => { try { return JSON.parse(body).event_type; } catch { return "parse_error"; } })(),
+    });
+
     if (!process.env.PADDLE_WEBHOOK_SECRET) {
       return Response.json({ error: "Webhook not configured" }, { status: 500 });
     }
 
     const isValid = await verifyWebhook(body, signature);
     if (!isValid) {
+      console.error("[WEBHOOK] verify failed", {
+        sigHeader: signature.slice(0, 80),
+        bodyPreview: body.slice(0, 100),
+      });
       return Response.json({ error: "Invalid signature" }, { status: 401 });
     }
 

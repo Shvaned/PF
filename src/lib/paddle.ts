@@ -65,10 +65,33 @@ export async function createPaddleCustomer(userId: string, email: string): Promi
   return customerId;
 }
 
-export async function verifyWebhook(body: string, signature: string): Promise<boolean> {
+export async function verifyWebhook(body: string, signatureHeader: string): Promise<boolean> {
   const secret = process.env.PADDLE_WEBHOOK_SECRET;
-  if (!secret) return false;
+  if (!secret) {
+    console.error("[WEBHOOK] verify missing_secret");
+    return false;
+  }
 
+  // Paddle Billing signature format: "ts={timestamp};h1={signature_hex}"
+  const parts: Record<string, string> = {};
+  for (const part of signatureHeader.split(";")) {
+    const [k, v] = part.split("=");
+    if (k && v) parts[k.trim()] = v.trim();
+  }
+
+  const ts = parts["ts"];
+  const h1 = parts["h1"];
+
+  if (!ts || !h1) {
+    console.error("[WEBHOOK] verify bad_header_format", {
+      hasTs: !!ts,
+      hasH1: !!h1,
+      headerPreview: signatureHeader.slice(0, 80),
+    });
+    return false;
+  }
+
+  // Compute HMAC-SHA256(ts:body) and compare to h1
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     "raw",
@@ -78,15 +101,10 @@ export async function verifyWebhook(body: string, signature: string): Promise<bo
     ["verify"]
   );
 
-  const sigBytes = new Uint8Array(signature.match(/.{1,2}/g)!.map((b) => parseInt(b, 16)));
-  const verified = await crypto.subtle.verify(
-    "HMAC",
-    key,
-    sigBytes,
-    encoder.encode(body)
-  );
+  const payload = `${ts}:${body}`;
+  const expectedSig = new Uint8Array(h1.match(/.{1,2}/g)!.map((b) => parseInt(b, 16)));
 
-  return verified;
+  return crypto.subtle.verify("HMAC", key, expectedSig, encoder.encode(payload));
 }
 
 export function isPremiumActive(subscriptionStatus: string | null): boolean {
