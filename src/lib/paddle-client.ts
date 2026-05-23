@@ -3,7 +3,8 @@
 const PADDLE_JS = "https://cdn.paddle.com/paddle/v2/paddle.js";
 
 interface CheckoutOptions {
-  customerId: string;
+  customerId?: string;
+  email?: string;
   priceId: string;
   successUrl?: string;
 }
@@ -34,6 +35,7 @@ function loadPaddleScript(): Promise<void> {
 
 export async function openPaddleCheckout({
   customerId,
+  email,
   priceId,
   successUrl,
 }: CheckoutOptions) {
@@ -57,12 +59,22 @@ export async function openPaddleCheckout({
     }
 
     const url = successUrl || `${window.location.origin}/premium?checkout=success`;
-    console.log("[Paddle] Opening checkout", { priceId, customerId, successUrl: url });
+
+    // Build customer: prefer email-only (let Paddle auto-create),
+    // fall back to ID if we have one
+    const customer: Record<string, string> = {};
+    if (email) {
+      customer.email = email;
+    } else if (customerId) {
+      customer.id = customerId;
+    }
+
+    console.log("[Paddle] Opening checkout", { priceId, hasEmail: !!email, hasCustomerId: !!customerId, successUrl: url });
 
     Paddle.Checkout.open({
       items: [{ priceId, quantity: 1 }],
-      customer: { id: customerId },
-      customData: { userId: customerId },
+      customer,
+      customData: email ? { email } : { userId: customerId },
       settings: {
         displayMode: "overlay",
         theme: "light",
