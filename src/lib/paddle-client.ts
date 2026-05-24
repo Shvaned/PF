@@ -32,10 +32,9 @@ export async function openPaddleCheckout(params: {
 
   if (!initDone) {
     const token = process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN;
-    const env = process.env.NEXT_PUBLIC_PADDLE_ENV || "sandbox";
-    Paddle.Initialize({ token, environment: env });
+    Paddle.Initialize({ token });
     initDone = true;
-    console.log("[PADDLE] init", { env, hasToken: !!token });
+    console.log("[PADDLE] init", { hasToken: !!token });
   }
 
   const payload: Record<string, any> = {
