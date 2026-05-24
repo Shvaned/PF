@@ -1,4 +1,5 @@
 import { getCurrentUser } from "@/lib/auth-helpers";
+import { createPaddleCustomer } from "@/lib/paddle";
 
 export async function POST() {
   const user = await getCurrentUser();
@@ -11,11 +12,15 @@ export async function POST() {
     return Response.json({ error: "Checkout not configured" }, { status: 500 });
   }
 
-  console.log("[CHECKOUT] ready", { userId: user.id, priceId });
+  // Create/reuse Paddle customer for webhook mapping
+  if (user.email) {
+    try {
+      await createPaddleCustomer(user.id, user.email);
+    } catch (e: any) {
+      console.error("[CHECKOUT] customer error", e?.message);
+    }
+  }
 
-  return Response.json({
-    priceId,
-    email: user.email,
-    userId: user.id,
-  });
+  console.log("[CHECKOUT] ready", { userId: user.id, priceId });
+  return Response.json({ priceId, email: user.email, userId: user.id });
 }

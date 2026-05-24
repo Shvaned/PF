@@ -4,7 +4,6 @@ import { prisma } from "@/lib/prisma";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import DeleteAccountButton from "@/components/ui/DeleteAccountButton";
-import BillingPortalButton from "@/components/ui/BillingPortalButton";
 
 export default async function SettingsPage() {
   const user = await getCurrentUser();
@@ -57,9 +56,6 @@ export default async function SettingsPage() {
                 </span>
               </div>
             )}
-            <div className="pt-2">
-              <BillingPortalButton />
-            </div>
           </div>
         </Card>
       )}

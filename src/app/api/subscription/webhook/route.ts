@@ -2,199 +2,117 @@ import { prisma } from "@/lib/prisma";
 import { verifyWebhook } from "@/lib/paddle";
 import { NextRequest } from "next/server";
 
-async function findUserByCustomerId(customerId: string) {
-  const sub = await prisma.subscription.findFirst({
-    where: { paddleCustomerId: customerId },
-  });
-  if (!sub) return null;
-  return { userId: sub.userId, subscriptionId: sub.id, subscription: sub };
-}
-
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.text();
-    const signature = request.headers.get("paddle-signature") || "";
+  const rawBody = await request.text();
+  const signature = request.headers.get("paddle-signature") || "";
+  const secret = process.env.PADDLE_WEBHOOK_SECRET;
 
-    if (!process.env.PADDLE_WEBHOOK_SECRET) {
-      return Response.json({ error: "Webhook not configured" }, { status: 500 });
-    }
+  if (!secret) {
+    return Response.json({ error: "Webhook not configured" }, { status: 500 });
+  }
 
-    const isValid = await verifyWebhook(body, signature);
-    if (!isValid) {
-      return Response.json({ error: "Invalid signature" }, { status: 401 });
-    }
+  const valid = await verifyWebhook(rawBody, signature, secret);
+  if (!valid) {
+    console.error("[WEBHOOK] invalid_signature");
+    return Response.json({ error: "Invalid signature" }, { status: 401 });
+  }
 
-    const event = JSON.parse(body);
-    const eventType = event.event_type;
-    const data = event.data;
+  const event = JSON.parse(rawBody);
+  const type = event.event_type;
+  const data = event.data;
 
-    switch (eventType) {
-      // ── Subscription lifecycle ──
-      case "subscription.activated":
-      case "subscription.updated": {
-        const customerId = data.customer_id;
-        let subscription = await prisma.subscription.findFirst({
-          where: { paddleCustomerId: customerId },
+  console.log("[WEBHOOK]", type);
+
+  switch (type) {
+    case "subscription.activated":
+    case "subscription.updated": {
+      const customerId = data.customer_id;
+      let sub = await prisma.subscription.findFirst({
+        where: { paddleCustomerId: customerId },
+      });
+
+      if (!sub && data.custom_data?.userId) {
+        sub = await prisma.subscription.create({
+          data: {
+            userId: data.custom_data.userId,
+            paddleCustomerId: customerId,
+            status: data.status,
+          },
         });
-
-        // First-time: no subscription exists yet. Create one from custom_data.userId
-        // which was set when Paddle.Checkout.open() was called with customData: { userId }
-        if (!subscription) {
-          const appUserId = data.custom_data?.userId;
-          if (appUserId) {
-            subscription = await prisma.subscription.create({
-              data: {
-                userId: appUserId,
-                paddleCustomerId: customerId,
-                status: data.status,
-              },
-            });
-            console.info("[WEBHOOK] subscription created from custom_data", {
-              userId: appUserId,
-              customerId,
-              subscriptionId: subscription.id,
-            });
-          }
-        }
-
-        if (subscription) {
-          await prisma.subscription.update({
-            where: { id: subscription.id },
-            data: {
-              paddleSubscriptionId: data.id,
-              status: data.status,
-              planId: data.items?.[0]?.price_id,
-              currentPeriodEnd: data.current_billing_period?.ends_at
-                ? new Date(data.current_billing_period.ends_at)
-                : null,
-              canceledAt: data.canceled_at ? new Date(data.canceled_at) : null,
-            },
-          });
-
-          await prisma.user.update({
-            where: { id: subscription.userId },
-            data: {
-              isPremium: data.status === "active" || data.status === "trialing",
-            },
-          });
-        }
-        break;
+        console.log("[WEBHOOK] subscription_created", { id: sub.id });
       }
 
-      case "subscription.canceled":
-      case "subscription.past_due": {
-        const customerId = data.customer_id;
-        const subscription = await prisma.subscription.findFirst({
-          where: { paddleCustomerId: customerId },
+      if (sub) {
+        await prisma.subscription.update({
+          where: { id: sub.id },
+          data: {
+            paddleSubscriptionId: data.id,
+            status: data.status,
+            planId: data.items?.[0]?.price_id,
+            currentPeriodEnd: data.current_billing_period?.ends_at
+              ? new Date(data.current_billing_period.ends_at) : null,
+            canceledAt: data.canceled_at ? new Date(data.canceled_at) : null,
+          },
         });
 
-        if (subscription) {
-          await prisma.subscription.update({
-            where: { id: subscription.id },
-            data: { status: data.status },
-          });
-
-          if (eventType === "subscription.canceled") {
-            await prisma.user.update({
-              where: { id: subscription.userId },
-              data: { isPremium: false },
-            });
-          }
-        }
-        break;
-      }
-
-      // ── Transaction events ──
-      case "transaction.completed": {
-        const customerId = data.customer_id;
-        const txId = data.id;
-        const subscriptionId = data.subscription_id;
-
-        console.info("[WEBHOOK] transaction.completed", {
-          transactionId: txId,
-          subscriptionId,
-          customerId,
-          status: data.status,
-          origin: data.origin,
-        });
-
-        // Only act on subscription-related transactions (ignore one-off payments)
-        if (!subscriptionId) {
-          console.info("[WEBHOOK] transaction.completed skip — no subscription_id");
-          break;
-        }
-
-        const mapping = await findUserByCustomerId(customerId);
-        if (!mapping) {
-          console.warn("[WEBHOOK] transaction.completed no_user", { customerId, txId });
-          break;
-        }
-
-        // Idempotent: only update if not already active
-        const changes: Record<string, any> = {};
-        if (mapping.subscription.paddleSubscriptionId !== subscriptionId) {
-          changes.paddleSubscriptionId = subscriptionId;
-        }
-        if (mapping.subscription.status !== "active") {
-          changes.status = "active";
-        }
-        if (Object.keys(changes).length > 0) {
-          await prisma.subscription.update({
-            where: { id: mapping.subscriptionId },
-            data: changes,
-          });
-        }
-
-        // Ensure premium is active (idempotent — no-op if already premium)
         await prisma.user.update({
-          where: { id: mapping.userId },
+          where: { id: sub.userId },
+          data: { isPremium: data.status === "active" || data.status === "trialing" },
+        });
+      }
+      break;
+    }
+
+    case "subscription.canceled":
+    case "subscription.past_due": {
+      const customerId = data.customer_id;
+      const sub = await prisma.subscription.findFirst({
+        where: { paddleCustomerId: customerId },
+      });
+      if (sub) {
+        await prisma.subscription.update({
+          where: { id: sub.id },
+          data: { status: data.status },
+        });
+        if (type === "subscription.canceled") {
+          await prisma.user.update({
+            where: { id: sub.userId },
+            data: { isPremium: false },
+          });
+        }
+      }
+      break;
+    }
+
+    case "transaction.completed": {
+      const customerId = data.customer_id;
+      const sub = await prisma.subscription.findFirst({
+        where: { paddleCustomerId: customerId },
+      });
+      if (sub) {
+        await prisma.user.update({
+          where: { id: sub.userId },
           data: { isPremium: true },
         });
-
-        console.info("[WEBHOOK] transaction.completed premium_activated", { userId: mapping.userId });
-        break;
+        console.log("[WEBHOOK] premium_activated", { userId: sub.userId });
       }
-
-      case "transaction.payment_failed": {
-        const customerId = data.customer_id;
-        const txId = data.id;
-        const subscriptionId = data.subscription_id;
-
-        console.warn("[WEBHOOK] transaction.payment_failed", {
-          transactionId: txId,
-          subscriptionId,
-          customerId,
-        });
-
-        if (!subscriptionId) {
-          console.info("[WEBHOOK] transaction.payment_failed skip — no subscription_id");
-          break;
-        }
-
-        const mapping = await findUserByCustomerId(customerId);
-        if (!mapping) {
-          console.warn("[WEBHOOK] transaction.payment_failed no_user", { customerId, txId });
-          break;
-        }
-
-        // Mark subscription as past_due but do NOT revoke premium yet.
-        // Paddle will later send subscription.past_due or subscription.canceled
-        // if the payment ultimately fails after retries.
-        if (mapping.subscription.status !== "past_due" && mapping.subscription.status !== "canceled") {
-          await prisma.subscription.update({
-            where: { id: mapping.subscriptionId },
-            data: { status: "past_due" },
-          });
-        }
-
-        console.warn("[WEBHOOK] transaction.payment_failed marked_past_due", { userId: mapping.userId });
-        break;
-      }
+      break;
     }
 
-    return Response.json({ received: true });
-  } catch (error) {
-    console.error("Webhook error:", error);
-    return Response.json({ error: "Webhook processing failed" }, { status: 500 });
+    case "transaction.payment_failed": {
+      const customerId = data.customer_id;
+      const sub = await prisma.subscription.findFirst({
+        where: { paddleCustomerId: customerId },
+      });
+      if (sub && sub.status !== "past_due" && sub.status !== "canceled") {
+        await prisma.subscription.update({
+          where: { id: sub.id },
+          data: { status: "past_due" },
+        });
+      }
+      break;
+    }
   }
+
+  return Response.json({ received: true });
 }
