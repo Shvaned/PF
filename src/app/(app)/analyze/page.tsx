@@ -1,73 +1,104 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import ErrorState from "@/components/ui/ErrorState";
 
+const tips = [
+  "Tailoring resume keywords to the job description improves match scores.",
+  "Structuring answers with the STAR method impresses interviewers.",
+  "Quantify achievements — numbers catch attention faster than words.",
+  "Practice behavioral questions — they appear in nearly every interview.",
+  "Research the company before the interview. It shows preparation.",
+];
+
 export default function AnalyzePage() {
-  const [tab, setTab] = useState<"paste" | "upload">("paste");
+  const router = useRouter();
+  const [resumes, setResumes] = useState<any[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [resumeText, setResumeText] = useState("");
   const [jobDescription, setJobDescription] = useState("");
-  const [file, setFile] = useState<File | null>(null);
+  const [roleCategory, setRoleCategory] = useState("general");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [parsingPdf, setParsingPdf] = useState(false);
-  const [roleCategory, setRoleCategory] = useState("general");
-  const fileRef = useRef<HTMLInputElement>(null);
-  const router = useRouter();
+  const [pageLoading, setPageLoading] = useState(true);
 
-  async function handlePdfUpload(f: File) {
-    setParsingPdf(true);
-    setError(null);
-    try {
-      const formData = new FormData();
-      formData.append("file", f);
-      const res = await fetch("/api/resume/parse", { method: "POST", body: formData });
-      if (!res.ok) throw new Error("Failed to parse PDF");
-      const data = await res.json();
-      setResumeText(data.text);
-    } catch {
-      setError("Could not parse the PDF. Try pasting your resume text instead.");
-    } finally {
-      setParsingPdf(false);
-    }
+  // Loading UX stages
+  const [stage, setStage] = useState(0);
+  const stages = [
+    "Parsing resume...",
+    "Analyzing skills & keywords...",
+    "Matching against job description...",
+    "Generating interview questions...",
+    "Finalizing report...",
+  ];
+  const [tipIndex] = useState(Math.floor(Math.random() * tips.length));
+
+  useEffect(() => {
+    fetch("/api/resumes")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.resumes) setResumes(data.resumes);
+        if (data.selectedId) {
+          setSelectedId(data.selectedId);
+          const sel = data.resumes.find((r: any) => r.id === data.selectedId);
+          if (sel) setResumeText(sel.content);
+        }
+      })
+      .finally(() => setPageLoading(false));
+  }, []);
+
+  // Progress the loading stages
+  useEffect(() => {
+    if (!loading) { setStage(0); return; }
+    let i = 0;
+    const timer = setInterval(() => {
+      i++;
+      if (i < stages.length) setStage(i);
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [loading]);
+
+  async function handleSelectResume(id: string) {
+    await fetch(`/api/resumes/${id}`, { method: "PATCH" });
+    setSelectedId(id);
+    const sel = resumes.find((r) => r.id === id);
+    if (sel) setResumeText(sel.content);
   }
 
   async function handleAnalyze() {
     if (!resumeText.trim() || resumeText.length < 50) {
-      setError("Please enter your full resume text (at least 50 characters).");
+      setError("Please select a resume with enough content (at least 50 characters).");
       return;
     }
     if (!jobDescription.trim() || jobDescription.length < 30) {
       setError("Please enter the full job description (at least 30 characters).");
       return;
     }
-
     setLoading(true);
     setError(null);
-
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ resumeText: resumeText.trim(), jobDescription: jobDescription.trim(), roleCategory }),
       });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Analysis failed");
-      }
-
-      const data = await res.json();
-      router.push(`/analyze/results/${data.analysisId}`);
+      if (!res.ok) throw new Error((await res.json()).error || "Analysis failed");
+      router.push(`/analyze/results/${(await res.json()).analysisId}`);
     } catch (e: any) {
       setError(e.message || "Something went wrong. Please try again.");
-    } finally {
       setLoading(false);
     }
   }
+
+  if (pageLoading) {
+    return <div className="max-w-2xl mx-auto"><div className="h-60 bg-gray-50 rounded-[16px] animate-pulse" /></div>;
+  }
+
+  const selectedResume = resumes.find((r) => r.id === selectedId);
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -76,129 +107,117 @@ export default function AnalyzePage() {
         <p className="text-sm text-[#6B7280] mt-1">Compare your resume with a job description</p>
       </div>
 
-      {/* Resume Input */}
-      <Card className="mb-5">
-        <h3 className="text-[16px] font-medium text-[#111827] mb-4">Your Resume</h3>
-
-        <div className="flex gap-1 mb-4 p-1 bg-gray-100 rounded-[10px]">
-          <button
-            onClick={() => setTab("paste")}
-            className={`flex-1 text-sm py-1.5 rounded-[8px] transition-colors ${
-              tab === "paste" ? "bg-white shadow-sm font-medium text-[#111827]" : "text-[#6B7280]"
-            }`}
-          >
-            Paste Resume
-          </button>
-          <button
-            onClick={() => setTab("upload")}
-            className={`flex-1 text-sm py-1.5 rounded-[8px] transition-colors ${
-              tab === "upload" ? "bg-white shadow-sm font-medium text-[#111827]" : "text-[#6B7280]"
-            }`}
-          >
-            Upload PDF
-          </button>
-        </div>
-
-        {tab === "paste" ? (
-          <textarea
-            value={resumeText}
-            onChange={(e) => setResumeText(e.target.value)}
-            placeholder="Paste your full resume here..."
-            rows={10}
-            className="w-full px-4 py-3 border border-[#E5E7EB] rounded-[12px] text-sm focus:outline-none focus:ring-2 focus:ring-[#2563EB]/40 resize-y"
-          />
-        ) : (
-          <div>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".pdf"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) {
-                  setFile(f);
-                  handlePdfUpload(f);
-                }
-              }}
-            />
-            <div
-              onClick={() => fileRef.current?.click()}
-              className="border-2 border-dashed border-[#E5E7EB] rounded-[12px] p-8 text-center cursor-pointer hover:border-[#2563EB] transition-colors"
-            >
-              {parsingPdf ? (
-                <div>
-                  <div className="w-8 h-8 mx-auto mb-2 border-2 border-[#2563EB] border-t-transparent rounded-full animate-spin" />
-                  <p className="text-sm text-[#6B7280]">Parsing PDF...</p>
+      {/* Selected Resume */}
+      {resumes.length === 0 ? (
+        <Card className="mb-5 text-center py-8">
+          <div className="text-3xl mb-3">📄</div>
+          <h3 className="text-[16px] font-medium text-[#111827] mb-2">Add a resume to begin</h3>
+          <p className="text-sm text-[#6B7280] mb-4">Upload a PDF or paste your resume before analyzing.</p>
+          <Button href="/manage-resume">Manage Resume</Button>
+        </Card>
+      ) : (
+        <>
+          {selectedResume ? (
+            <Card className="mb-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-[16px] font-medium text-[#111827]">Selected Resume</h3>
+                <div className="flex items-center gap-2">
+                  <Link href="/manage-resume" className="text-xs text-[#2563EB] hover:underline">Change</Link>
+                  <Link href="/manage-resume" className="text-xs text-[#2563EB] hover:underline">Add New</Link>
                 </div>
-              ) : resumeText && tab === "upload" ? (
-                <div>
-                  <svg className="w-8 h-8 mx-auto mb-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  <p className="text-sm text-green-600 font-medium">PDF parsed</p>
-                  <p className="text-xs text-[#9CA3AF] mt-1">{file?.name}</p>
-                </div>
-              ) : (
-                <div>
-                  <svg className="w-8 h-8 mx-auto mb-2 text-[#9CA3AF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                  </svg>
-                  <p className="text-sm text-[#6B7280]">Click to upload PDF</p>
-                  <p className="text-xs text-[#9CA3AF]">or drag and drop</p>
+              </div>
+              <div className="p-3 bg-[#EFF6FF] rounded-[10px] border border-[#2563EB]/10">
+                <p className="text-sm font-medium text-[#111827]">{selectedResume.title}</p>
+                <p className="text-xs text-[#6B7280] mt-0.5">
+                  {selectedResume.uploadType === "pdf" ? "PDF" : "Paste"} · {selectedResume.content.length} chars · {new Date(selectedResume.createdAt).toLocaleDateString()}
+                </p>
+                <p className="text-xs text-[#9CA3AF] mt-1 truncate">{selectedResume.content.slice(0, 120)}...</p>
+              </div>
+
+              {resumes.length > 1 && (
+                <div className="mt-4">
+                  <p className="text-xs font-medium text-[#6B7280] mb-2">Other resumes</p>
+                  <div className="flex flex-wrap gap-2">
+                    {resumes.filter((r) => r.id !== selectedId).map((r) => (
+                      <button key={r.id} onClick={() => handleSelectResume(r.id)}
+                        className="px-3 py-1.5 text-xs bg-gray-100 rounded-[8px] hover:bg-[#EFF6FF] transition-colors text-[#374151]">
+                        {r.title.slice(0, 40)}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
-            </div>
-          </div>
-        )}
-      </Card>
+            </Card>
+          ) : (
+            <Card className="mb-5">
+              <h3 className="text-[16px] font-medium text-[#111827] mb-3">Your Resumes</h3>
+              <p className="text-sm text-[#6B7280] mb-3">Select a resume to analyze:</p>
+              <div className="space-y-2">
+                {resumes.map((r) => (
+                  <button key={r.id} onClick={() => handleSelectResume(r.id)}
+                    className="w-full text-left p-3 bg-gray-50 rounded-[10px] hover:bg-[#EFF6FF] transition-colors">
+                    <p className="text-sm font-medium text-[#111827]">{r.title}</p>
+                    <p className="text-xs text-[#6B7280]">{r.content.length} chars · {new Date(r.createdAt).toLocaleDateString()}</p>
+                  </button>
+                ))}
+              </div>
+            </Card>
+          )}
+        </>
+      )}
 
       {/* Job Description */}
-      <Card className="mb-5">
-        <h3 className="text-[16px] font-medium text-[#111827] mb-4">Job Description</h3>
-        <textarea
-          value={jobDescription}
-          onChange={(e) => setJobDescription(e.target.value)}
-          placeholder="Paste the job description here..."
-          rows={8}
-          className="w-full px-4 py-3 border border-[#E5E7EB] rounded-[12px] text-sm focus:outline-none focus:ring-2 focus:ring-[#2563EB]/40 resize-y"
-        />
-      </Card>
+      {resumes.length > 0 && (
+        <Card className="mb-5">
+          <h3 className="text-[16px] font-medium text-[#111827] mb-4">Job Description</h3>
+          <textarea
+            value={jobDescription}
+            onChange={(e) => setJobDescription(e.target.value)}
+            placeholder="Paste the job description here..."
+            rows={8}
+            className="w-full px-4 py-3 border border-[#E5E7EB] rounded-[12px] text-sm focus:outline-none focus:ring-2 focus:ring-[#2563EB]/40 resize-y"
+          />
+        </Card>
+      )}
 
       {/* Role Selector */}
-      <Card className="mb-5">
-        <h3 className="text-[16px] font-medium text-[#111827] mb-3">Target Role</h3>
-        <p className="text-xs text-[#9CA3AF] mb-3">Choose a category to improve analysis and question relevance</p>
-        <div className="flex flex-wrap gap-2">
-          {[
-            { value: "general", label: "General" },
-            { value: "software", label: "Software" },
-            { value: "data", label: "Data" },
-            { value: "marketing", label: "Marketing" },
-            { value: "sales", label: "Sales" },
-            { value: "operations", label: "Operations" },
-            { value: "finance", label: "Finance" },
-          ].map((r) => (
-            <button
-              key={r.value}
-              onClick={() => setRoleCategory(r.value)}
-              className={`px-3 py-1.5 text-sm rounded-[10px] border transition-colors ${
-                roleCategory === r.value
-                  ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB] font-medium"
-                  : "border-[#E5E7EB] text-[#6B7280] hover:border-gray-300"
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
-      </Card>
+      {resumes.length > 0 && (
+        <Card className="mb-5">
+          <h3 className="text-[16px] font-medium text-[#111827] mb-3">Target Role</h3>
+          <div className="flex flex-wrap gap-2">
+            {["general","software","data","marketing","sales","operations","finance"].map((r) => (
+              <button key={r} onClick={() => setRoleCategory(r)}
+                className={`px-3 py-1.5 text-sm rounded-[10px] border transition-colors capitalize ${
+                  roleCategory === r ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB] font-medium" : "border-[#E5E7EB] text-[#6B7280] hover:border-gray-300"
+                }`}>{r}</button>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {error && <ErrorState message={error} onRetry={handleAnalyze} />}
 
-      <Button onClick={handleAnalyze} loading={loading} className="w-full py-3">
-        {loading ? "Analyzing..." : "Analyze Now"}
-      </Button>
+      {/* Analyze button with loading UX */}
+      {resumes.length > 0 && (
+        <div>
+          {loading ? (
+            <div className="bg-white rounded-[16px] p-6 border border-[#E5E7EB] shadow-sm">
+              <p className="text-sm font-medium text-[#111827] text-center mb-4">{stages[stage]}</p>
+              <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-[#2563EB] rounded-full transition-all duration-700 ease-out"
+                  style={{ width: `${((stage + 1) / stages.length) * 100}%` }}
+                />
+              </div>
+              <p className="text-xs text-[#9CA3AF] text-center mt-3">💡 {tips[tipIndex]}</p>
+            </div>
+          ) : (
+            <Button onClick={handleAnalyze} className="w-full py-3">
+              Analyze Now
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

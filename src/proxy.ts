@@ -6,6 +6,7 @@ const COOKIE_NAME = "__session";
 
 const PROTECTED_PATHS = [
   "/dashboard",
+  "/manage-resume",
   "/analyze",
   "/prep",
   "/mock-interview",
