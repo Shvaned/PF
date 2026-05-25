@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
@@ -15,13 +15,15 @@ const tips = [
   "Research the company before the interview. It shows preparation.",
 ];
 
-export default function AnalyzePage() {
+function AnalyzeContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const roleParam = searchParams.get("role");
   const [resumes, setResumes] = useState<any[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [resumeText, setResumeText] = useState("");
   const [jobDescription, setJobDescription] = useState("");
-  const [roleCategory, setRoleCategory] = useState("general");
+  const [roleCategory, setRoleCategory] = useState(roleParam || "general");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
@@ -219,5 +221,13 @@ export default function AnalyzePage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function AnalyzePage() {
+  return (
+    <Suspense fallback={<div className="max-w-2xl mx-auto"><div className="h-60 bg-gray-50 rounded-[16px] animate-pulse" /></div>}>
+      <AnalyzeContent />
+    </Suspense>
   );
 }

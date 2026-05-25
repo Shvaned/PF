@@ -8,6 +8,7 @@ const PROTECTED_PATHS = [
   "/dashboard",
   "/manage-resume",
   "/analyze",
+  "/job-hunt",
   "/prep",
   "/mock-interview",
   "/history",

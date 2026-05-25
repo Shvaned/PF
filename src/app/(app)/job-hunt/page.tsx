@@ -1,0 +1,366 @@
+"use client";
+
+import { useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import Button from "@/components/ui/Button";
+import Card from "@/components/ui/Card";
+
+interface Job {
+  jobId: string; title: string; employer: string; location: string;
+  remote: boolean; salary: string | null; employmentType: string | null;
+  description: string | null; shortDescription: string | null;
+  applyUrl: string | null; source: string; datePosted: string | null;
+  score: number; rawData?: any;
+}
+
+const loadingMessages = [
+  "Analyzing your resume...",
+  "Extracting your skills & experience...",
+  "Finding matching opportunities...",
+  "Ranking best fits for you...",
+  "Personalizing recommendations...",
+];
+
+export default function JobHuntPage() {
+  const router = useRouter();
+
+  const [phase, setPhase] = useState<"loading" | "noResume" | "generating" | "ready" | "empty" | "error">("loading");
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [fresh, setFresh] = useState(false);
+  const [loadingIdx, setLoadingIdx] = useState(0);
+  const [expandedJob, setExpandedJob] = useState<Job | null>(null);
+  const [error, setError] = useState("");
+
+  // Filters
+  const [remoteOnly, setRemoteOnly] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+
+  useEffect(() => {
+    init();
+  }, []);
+
+  // Animate loading messages
+  useEffect(() => {
+    if (phase !== "generating") return;
+    const timer = setInterval(() => {
+      setLoadingIdx((i) => (i + 1) % loadingMessages.length);
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [phase]);
+
+  async function init() {
+    setPhase("loading");
+    try {
+      const res = await fetch("/api/jobs/session");
+      if (!res.ok) throw new Error("Failed");
+
+      const data = await res.json();
+      // Check for existing sessions first (cache read)
+      if (data.sessions?.length > 0 && data.sessions[0].jobs?.length > 0) {
+        setJobs(data.sessions[0].jobs);
+        setSessionId(data.sessions[0].id);
+        setFresh(true);
+        setPhase("ready");
+        return;
+      }
+
+      // No cache — generate new recommendations
+      await generateRecommendations();
+    } catch {
+      setPhase("error");
+      setError("Could not load. Please try again.");
+    }
+  }
+
+  async function generateRecommendations() {
+    setPhase("generating");
+    setError("");
+    try {
+      const res = await fetch("/api/jobs/recommend", { method: "POST" });
+      const data = await res.json();
+
+      if (res.status === 400 && data.error?.includes("No resume selected")) {
+        setPhase("noResume");
+        return;
+      }
+
+      if (!res.ok) throw new Error(data.error || "Failed");
+
+      if (data.jobs?.length === 0) {
+        setPhase("empty");
+        return;
+      }
+
+      setJobs(data.jobs);
+      setSessionId(data.sessionId);
+      setFresh(data.fresh);
+      setPhase("ready");
+    } catch (e: any) {
+      setPhase("error");
+      setError(e.message || "Something went wrong.");
+    }
+  }
+
+  // Filtered jobs
+  const filteredJobs = useMemo(() => {
+    let result = jobs;
+    if (remoteOnly) result = result.filter((j) => j.remote);
+    return result;
+  }, [jobs, remoteOnly]);
+
+  // Score color
+  function scoreColor(s: number) {
+    if (s >= 75) return "text-green-600";
+    if (s >= 50) return "text-blue-600";
+    return "text-[#6B7280]";
+  }
+
+  function daysAgo(date: string | null) {
+    if (!date) return null;
+    const d = new Date(date);
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - d.getTime()) / 86400000);
+    if (diff === 0) return "Today";
+    if (diff === 1) return "Yesterday";
+    if (diff < 7) return `${diff}d ago`;
+    return d.toLocaleDateString();
+  }
+
+  // ── No Resume State ──
+  if (phase === "noResume") {
+    return (
+      <div className="max-w-2xl mx-auto text-center py-16">
+        <div className="text-5xl mb-4">📄</div>
+        <h1 className="text-[24px] font-semibold text-[#111827] mb-2">Job Hunt with AI</h1>
+        <p className="text-sm text-[#6B7280] mb-6">Select a resume first — we'll find jobs tailored to your profile.</p>
+        <Button href="/manage-resume">Manage Resume</Button>
+      </div>
+    );
+  }
+
+  // ── Loading ──
+  if (phase === "loading" || phase === "generating") {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-[24px] font-semibold text-[#111827]">Job Hunt with AI</h1>
+          <p className="text-sm text-[#6B7280] mt-1">Jobs tailored to your resume</p>
+        </div>
+        <Card className="text-center py-12">
+          <div className="w-12 h-12 mx-auto mb-4 border-2 border-[#2563EB] border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm font-medium text-[#111827] mb-2">{loadingMessages[loadingIdx]}</p>
+          <div className="w-48 mx-auto h-1.5 bg-gray-200 rounded-full overflow-hidden mt-4">
+            <div className="h-full bg-[#2563EB] rounded-full animate-pulse" style={{ width: "60%" }} />
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  // ── Error ──
+  if (phase === "error") {
+    return (
+      <div className="max-w-2xl mx-auto text-center py-16">
+        <div className="text-5xl mb-4">😕</div>
+        <h1 className="text-[24px] font-semibold text-[#111827] mb-2">Something went wrong</h1>
+        <p className="text-sm text-[#6B7280] mb-4">{error}</p>
+        <div className="flex gap-3 justify-center">
+          <Button onClick={generateRecommendations}>Try Again</Button>
+          <Link href="/manage-resume" className="text-sm text-[#2563EB] hover:underline py-2.5">Manage Resume</Link>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Empty ──
+  if (phase === "empty") {
+    return (
+      <div className="max-w-2xl mx-auto text-center py-16">
+        <div className="text-5xl mb-4">🔍</div>
+        <h1 className="text-[24px] font-semibold text-[#111827] mb-2">No strong matches right now</h1>
+        <p className="text-sm text-[#6B7280] mb-6">
+          We couldn't find good matches for your profile. Try updating your resume with more specific skills or try again later.
+        </p>
+        <div className="flex gap-3 justify-center">
+          <Button onClick={generateRecommendations}>Refresh</Button>
+          <Link href="/manage-resume" className="text-sm text-[#2563EB] hover:underline py-2.5">Update Resume</Link>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Main Grid ──
+  return (
+    <div className="max-w-5xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-[24px] font-semibold text-[#111827]">Job Hunt with AI</h1>
+          <p className="text-sm text-[#6B7280] mt-1">
+            {jobs.length} jobs tailored to your resume
+            {fresh && " · from cache"}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setShowFilters(!showFilters)}
+            className={`text-sm px-3 py-1.5 rounded-[10px] border transition-colors ${
+              showFilters ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB]" : "border-[#E5E7EB] text-[#6B7280]"
+            }`}>
+            Filters
+          </button>
+          <Button onClick={generateRecommendations} variant="secondary" className="text-sm">
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {/* Filters bar */}
+      {showFilters && (
+        <div className="flex flex-wrap gap-3 mb-5 p-3 bg-white rounded-[12px] border border-[#E5E7EB]">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={remoteOnly} onChange={(e) => setRemoteOnly(e.target.checked)}
+              className="rounded accent-[#2563EB]" />
+            Remote only
+          </label>
+        </div>
+      )}
+
+      {/* Job grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filteredJobs.map((job) => (
+          <div
+            key={job.jobId}
+            onClick={() => setExpandedJob(job)}
+            className="bg-white rounded-[16px] p-5 border border-[#E5E7EB] cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200"
+          >
+            <div className="flex items-start justify-between mb-2">
+              <h3 className="text-sm font-semibold text-[#111827] leading-snug pr-2 line-clamp-2">{job.title}</h3>
+              <span className={`text-xs font-bold shrink-0 ${scoreColor(job.score)}`}>
+                {job.score}%
+              </span>
+            </div>
+
+            <p className="text-xs text-[#6B7280] mb-2">{job.employer}</p>
+
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-[#6B7280]">{job.location}</span>
+              {job.remote && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-50 text-green-600">Remote</span>
+              )}
+              {job.employmentType && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">{job.employmentType}</span>
+              )}
+            </div>
+
+            {job.shortDescription && (
+              <p className="text-xs text-[#9CA3AF] line-clamp-2 mb-2">{job.shortDescription}</p>
+            )}
+
+            <div className="flex items-center justify-between text-[10px] text-[#9CA3AF]">
+              <span>{daysAgo(job.datePosted) || "Recently"}</span>
+              {job.salary && <span>{job.salary}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {filteredJobs.length === 0 && (
+        <Card className="text-center py-12">
+          <p className="text-sm text-[#6B7280]">No jobs match your filters. Try adjusting.</p>
+        </Card>
+      )}
+
+      {/* ── Expanded Job Modal ── */}
+      {expandedJob && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-[5vh] overflow-y-auto"
+          onClick={(e) => { if (e.target === e.currentTarget) setExpandedJob(null); }}>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+          <div className="relative bg-white rounded-[24px] shadow-2xl max-w-2xl w-full p-6 md:p-8 animate-fade-in-up">
+            {/* Close */}
+            <button onClick={() => setExpandedJob(null)}
+              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-[#9CA3AF]">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            {/* Header */}
+            <div className="mb-6">
+              <div className="flex items-center gap-3 mb-2">
+                <span className={`text-sm font-bold ${scoreColor(expandedJob.score)}`}>
+                  {expandedJob.score}% Match
+                </span>
+                {expandedJob.remote && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-600">Remote</span>
+                )}
+              </div>
+              <h2 className="text-[20px] font-semibold text-[#111827] mb-1">{expandedJob.title}</h2>
+              <p className="text-sm text-[#6B7280]">{expandedJob.employer} · {expandedJob.location}</p>
+            </div>
+
+            {/* Meta */}
+            <div className="grid grid-cols-2 gap-2 mb-6">
+              {expandedJob.employmentType && (
+                <div className="bg-gray-50 rounded-[10px] p-3">
+                  <p className="text-[10px] text-[#9CA3AF] uppercase">Type</p>
+                  <p className="text-sm font-medium text-[#111827]">{expandedJob.employmentType}</p>
+                </div>
+              )}
+              {expandedJob.salary && (
+                <div className="bg-gray-50 rounded-[10px] p-3">
+                  <p className="text-[10px] text-[#9CA3AF] uppercase">Salary</p>
+                  <p className="text-sm font-medium text-[#111827]">{expandedJob.salary}</p>
+                </div>
+              )}
+              <div className="bg-gray-50 rounded-[10px] p-3">
+                <p className="text-[10px] text-[#9CA3AF] uppercase">Posted</p>
+                <p className="text-sm font-medium text-[#111827]">{daysAgo(expandedJob.datePosted) || "Recently"}</p>
+              </div>
+              <div className="bg-gray-50 rounded-[10px] p-3">
+                <p className="text-[10px] text-[#9CA3AF] uppercase">Source</p>
+                <p className="text-sm font-medium text-[#111827] capitalize">{expandedJob.source}</p>
+              </div>
+            </div>
+
+            {/* Description */}
+            {expandedJob.description ? (
+              <div className="mb-6">
+                <h3 className="text-sm font-medium text-[#111827] mb-2">Description</h3>
+                <div className="text-sm text-[#374151] leading-relaxed max-h-64 overflow-y-auto bg-gray-50 rounded-[12px] p-4 whitespace-pre-wrap">
+                  {expandedJob.description.slice(0, 2000)}
+                  {expandedJob.description.length > 2000 && (
+                    <p className="text-xs text-[#9CA3AF] mt-2">Full description on employer site</p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="mb-6 p-4 bg-gray-50 rounded-[12px] text-center">
+                <p className="text-sm text-[#9CA3AF]">Full description available on the employer's site</p>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              {expandedJob.applyUrl && (
+                <a href={expandedJob.applyUrl} target="_blank" rel="noopener noreferrer"
+                  className="flex-1 text-center py-3 bg-[#2563EB] text-white font-semibold rounded-[14px] hover:bg-[#1D4ED8] transition-colors text-sm">
+                  Apply Now
+                </a>
+              )}
+              <button
+                onClick={() => {
+                  setExpandedJob(null);
+                  router.push(`/analyze?role=${encodeURIComponent(expandedJob.title)}`);
+                }}
+                className="flex-1 py-3 border-2 border-[#2563EB] text-[#2563EB] font-semibold rounded-[14px] hover:bg-[#EFF6FF] transition-colors text-sm"
+              >
+                Prepare for This Role
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

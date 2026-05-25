@@ -7,6 +7,7 @@ const links = [
   { href: "/dashboard", label: "Dashboard", icon: HomeIcon },
   { href: "/manage-resume", label: "Manage Resume", icon: DocIcon },
   { href: "/analyze", label: "Analyze Resume", icon: SearchIcon },
+  { href: "/job-hunt", label: "Job Hunt with AI", icon: BriefcaseIcon },
   { href: "/prep", label: "Interview Prep", icon: MessageIcon },
   { href: "/mock-interview", label: "Mock Interview", icon: MicIcon, premium: true },
   { href: "/history", label: "History", icon: ClockIcon },
@@ -110,6 +111,15 @@ function SearchIcon({ active }: { active: boolean }) {
   return (
     <svg className="w-5 h-5" fill="none" stroke={active ? "#2563EB" : "currentColor"} strokeWidth={1.5} viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+    </svg>
+  );
+}
+
+function BriefcaseIcon({ active }: { active: boolean }) {
+  return (
+    <svg className="w-5 h-5" fill="none" stroke={active ? "#2563EB" : "currentColor"} strokeWidth={1.5} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16" />
     </svg>
   );
 }
