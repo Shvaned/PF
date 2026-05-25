@@ -91,18 +91,31 @@ export async function POST(request: NextRequest) {
         break;
       }
 
+      case "subscription_paused":
+      case "subscription_unpaused":
+      case "subscription_resumed":
       case "subscription_cancelled":
       case "subscription_expired": {
         if (!userId) break;
+        const statusMap: Record<string, string> = {
+          subscription_paused: "paused",
+          subscription_unpaused: "active",
+          subscription_resumed: "active",
+          subscription_cancelled: "cancelled",
+          subscription_expired: "expired",
+        };
+        const newStatus = statusMap[eventName] || eventName;
+        const premiumActive = newStatus === "active" || newStatus === "on_trial";
+
         await prisma.subscription.update({
           where: { userId },
-          data: { status: eventName === "subscription_cancelled" ? "cancelled" : "expired" },
+          data: { status: newStatus },
         });
         await prisma.user.update({
           where: { id: userId },
-          data: { isPremium: false },
+          data: { isPremium: premiumActive },
         });
-        console.log("[LS_WEBHOOK]", eventName, "ok", { userId });
+        console.log("[LS_WEBHOOK]", eventName, "ok", { userId, newStatus, premiumActive });
         break;
       }
 
