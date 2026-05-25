@@ -19,10 +19,11 @@ function AnalyzeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const roleParam = searchParams.get("role");
+  const descParam = searchParams.get("description");
   const [resumes, setResumes] = useState<any[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [resumeText, setResumeText] = useState("");
-  const [jobDescription, setJobDescription] = useState("");
+  const [jobDescription, setJobDescription] = useState(descParam || "");
   const [roleCategory, setRoleCategory] = useState(roleParam || "general");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

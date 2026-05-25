@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Button from "@/components/ui/Button";
@@ -22,6 +22,8 @@ const loadingMessages = [
   "Personalizing recommendations...",
 ];
 
+const REFRESH_COOLDOWN_MIN = 15; // minutes
+
 export default function JobHuntPage() {
   const router = useRouter();
 
@@ -32,12 +34,29 @@ export default function JobHuntPage() {
   const [loadingIdx, setLoadingIdx] = useState(0);
   const [expandedJob, setExpandedJob] = useState<Job | null>(null);
   const [error, setError] = useState("");
+  const [lastRefresh, setLastRefresh] = useState<number | null>(null);
 
   // Filters
   const [remoteOnly, setRemoteOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
+  const loadingRef = useRef(false);
+  const generatingRef = useRef(false);
+
+  // Body scroll lock for modal
   useEffect(() => {
+    if (expandedJob) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => { document.body.style.overflow = ""; };
+  }, [expandedJob]);
+
+  // Init — only runs once
+  useEffect(() => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     init();
   }, []);
 
@@ -57,16 +76,16 @@ export default function JobHuntPage() {
       if (!res.ok) throw new Error("Failed");
 
       const data = await res.json();
-      // Check for existing sessions first (cache read)
+      // Check cache first
       if (data.sessions?.length > 0 && data.sessions[0].jobs?.length > 0) {
         setJobs(data.sessions[0].jobs);
         setSessionId(data.sessions[0].id);
         setFresh(true);
+        setLastRefresh(Date.now());
         setPhase("ready");
         return;
       }
 
-      // No cache — generate new recommendations
       await generateRecommendations();
     } catch {
       setPhase("error");
@@ -75,6 +94,9 @@ export default function JobHuntPage() {
   }
 
   async function generateRecommendations() {
+    if (generatingRef.current) return; // deduplicate requests
+    generatingRef.current = true;
+
     setPhase("generating");
     setError("");
     try {
@@ -96,21 +118,35 @@ export default function JobHuntPage() {
       setJobs(data.jobs);
       setSessionId(data.sessionId);
       setFresh(data.fresh);
+      setLastRefresh(Date.now());
       setPhase("ready");
     } catch (e: any) {
       setPhase("error");
       setError(e.message || "Something went wrong.");
+    } finally {
+      generatingRef.current = false;
     }
   }
 
-  // Filtered jobs
+  function canRefresh(): boolean {
+    if (!lastRefresh) return true;
+    const elapsed = (Date.now() - lastRefresh) / 60000;
+    return elapsed >= REFRESH_COOLDOWN_MIN;
+  }
+
+  function cooldownRemaining(): string {
+    if (!lastRefresh) return "";
+    const elapsed = (Date.now() - lastRefresh) / 60000;
+    const remaining = Math.ceil(REFRESH_COOLDOWN_MIN - elapsed);
+    if (remaining <= 0) return "";
+    return `${remaining}m`;
+  }
+
   const filteredJobs = useMemo(() => {
-    let result = jobs;
-    if (remoteOnly) result = result.filter((j) => j.remote);
-    return result;
+    if (remoteOnly) return jobs.filter((j) => j.remote);
+    return jobs;
   }, [jobs, remoteOnly]);
 
-  // Score color
   function scoreColor(s: number) {
     if (s >= 75) return "text-green-600";
     if (s >= 50) return "text-blue-600";
@@ -119,16 +155,24 @@ export default function JobHuntPage() {
 
   function daysAgo(date: string | null) {
     if (!date) return null;
-    const d = new Date(date);
-    const now = new Date();
-    const diff = Math.floor((now.getTime() - d.getTime()) / 86400000);
+    const diff = Math.floor((Date.now() - new Date(date).getTime()) / 86400000);
     if (diff === 0) return "Today";
     if (diff === 1) return "Yesterday";
     if (diff < 7) return `${diff}d ago`;
-    return d.toLocaleDateString();
+    return new Date(date).toLocaleDateString();
   }
 
-  // ── No Resume State ──
+  function handlePrepareForRole(job: Job) {
+    setExpandedJob(null);
+    const params = new URLSearchParams();
+    params.set("role", job.title);
+    if (job.description) {
+      params.set("description", job.description.slice(0, 3000));
+    }
+    router.push(`/analyze?${params.toString()}`);
+  }
+
+  // ── No Resume ──
   if (phase === "noResume") {
     return (
       <div className="max-w-2xl mx-auto text-center py-16">
@@ -140,7 +184,7 @@ export default function JobHuntPage() {
     );
   }
 
-  // ── Loading ──
+  // ── Loading / Generating ──
   if (phase === "loading" || phase === "generating") {
     return (
       <div className="max-w-2xl mx-auto">
@@ -181,7 +225,7 @@ export default function JobHuntPage() {
         <div className="text-5xl mb-4">🔍</div>
         <h1 className="text-[24px] font-semibold text-[#111827] mb-2">No strong matches right now</h1>
         <p className="text-sm text-[#6B7280] mb-6">
-          We couldn't find good matches for your profile. Try updating your resume with more specific skills or try again later.
+          We couldn't find good matches for your profile. Try updating your resume with more specific skills, or try again later.
         </p>
         <div className="flex gap-3 justify-center">
           <Button onClick={generateRecommendations}>Refresh</Button>
@@ -190,6 +234,8 @@ export default function JobHuntPage() {
       </div>
     );
   }
+
+  const cooldown = cooldownRemaining();
 
   // ── Main Grid ──
   return (
@@ -200,6 +246,7 @@ export default function JobHuntPage() {
           <p className="text-sm text-[#6B7280] mt-1">
             {jobs.length} jobs tailored to your resume
             {fresh && " · from cache"}
+            {cooldown && ` · refresh in ${cooldown}`}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -209,8 +256,8 @@ export default function JobHuntPage() {
             }`}>
             Filters
           </button>
-          <Button onClick={generateRecommendations} variant="secondary" className="text-sm">
-            Refresh
+          <Button onClick={generateRecommendations} variant="secondary" disabled={!canRefresh()} className="text-sm">
+            {canRefresh() ? "Refresh" : `Wait ${cooldown}`}
           </Button>
         </div>
       </div>
@@ -273,11 +320,12 @@ export default function JobHuntPage() {
 
       {/* ── Expanded Job Modal ── */}
       {expandedJob && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-[5vh] overflow-y-auto"
-          onClick={(e) => { if (e.target === e.currentTarget) setExpandedJob(null); }}>
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-[5vh] overflow-y-auto"
+          onClick={(e) => { if (e.target === e.currentTarget) setExpandedJob(null); }}
+        >
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-          <div className="relative bg-white rounded-[24px] shadow-2xl max-w-2xl w-full p-6 md:p-8 animate-fade-in-up">
-            {/* Close */}
+          <div className="relative bg-white rounded-[24px] shadow-2xl max-w-2xl w-full p-6 md:p-8">
             <button onClick={() => setExpandedJob(null)}
               className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-[#9CA3AF]">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -348,13 +396,8 @@ export default function JobHuntPage() {
                   Apply Now
                 </a>
               )}
-              <button
-                onClick={() => {
-                  setExpandedJob(null);
-                  router.push(`/analyze?role=${encodeURIComponent(expandedJob.title)}`);
-                }}
-                className="flex-1 py-3 border-2 border-[#2563EB] text-[#2563EB] font-semibold rounded-[14px] hover:bg-[#EFF6FF] transition-colors text-sm"
-              >
+              <button onClick={() => handlePrepareForRole(expandedJob)}
+                className="flex-1 py-3 border-2 border-[#2563EB] text-[#2563EB] font-semibold rounded-[14px] hover:bg-[#EFF6FF] transition-colors text-sm">
                 Prepare for This Role
               </button>
             </div>

@@ -66,12 +66,14 @@ export default function Sidebar() {
 }
 
 /* ---- Mobile bottom nav ---- */
+const mobileLinks = ["/dashboard", "/analyze", "/job-hunt", "/prep", "/history"];
+
 export function MobileNav() {
   const pathname = usePathname();
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E5E7EB] z-30 flex md:hidden">
-      {links.slice(0, 5).map((link) => {
+      {links.filter((l) => mobileLinks.includes(l.href)).map((link) => {
         const isActive = pathname.startsWith(link.href);
         return (
           <Link
@@ -82,7 +84,7 @@ export function MobileNav() {
             }`}
           >
             <link.icon active={isActive} />
-            {link.label === "Analyze Resume" ? "Analyze" : link.label}
+            {link.label === "Analyze Resume" ? "Analyze" : link.label === "Interview Prep" ? "Prep" : link.label === "Job Hunt with AI" ? "Jobs" : link.label}
           </Link>
         );
       })}
