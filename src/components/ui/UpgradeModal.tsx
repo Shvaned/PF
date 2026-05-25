@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import Button from "./Button";
-import { openPaddleCheckout } from "@/lib/paddle-client";
 
 interface UpgradeModalProps {
   open: boolean;
@@ -37,14 +36,23 @@ export default function UpgradeModal({
     setError("");
     setLoading(true);
     try {
-      const res = await fetch("/api/checkout", { method: "POST" });
-      if (!res.ok) throw new Error((await res.json()).error || "Failed");
-      const { priceId, email, userId } = await res.json();
+      const res = await fetch("/api/lemonsqueezy/create-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          successUrl: `${window.location.origin}/premium?checkout=success`,
+          cancelUrl: `${window.location.origin}/premium?checkout=cancelled`,
+        }),
+      });
+      const data = await res.json();
       onClose();
-      await openPaddleCheckout({ priceId, email, userId });
+      if (data.ok && data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error(data.error || "Failed");
+      }
     } catch (e: any) {
       setError(e.message || "Could not open checkout");
-    } finally {
       setLoading(false);
     }
   }

@@ -3,7 +3,6 @@
 import { useAuth } from "@/lib/auth-context";
 import { useSearchParams } from "next/navigation";
 import { useState, useEffect, Suspense } from "react";
-import { openPaddleCheckout } from "@/lib/paddle-client";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 
@@ -38,13 +37,22 @@ function PremiumContent() {
     setCheckoutError("");
     setCheckoutLoading(true);
     try {
-      const res = await fetch("/api/checkout", { method: "POST" });
-      if (!res.ok) throw new Error((await res.json()).error || "Failed");
-      const { priceId, email, userId } = await res.json();
-      await openPaddleCheckout({ priceId, email, userId });
+      const res = await fetch("/api/lemonsqueezy/create-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          successUrl: `${window.location.origin}/premium?checkout=success`,
+          cancelUrl: `${window.location.origin}/premium?checkout=cancelled`,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok && data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error(data.error || "Failed");
+      }
     } catch (e: any) {
       setCheckoutError(e.message || "Could not open checkout");
-    } finally {
       setCheckoutLoading(false);
     }
   }
