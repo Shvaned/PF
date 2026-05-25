@@ -33,8 +33,9 @@ model User {
   mockInterviews MockInterview[]
   weakAreas      WeakArea[]
   subscription   Subscription?
-  usageLogs      UsageLog[]
-  bookmarks      Bookmark[]
+  usageLogs             UsageLog[]
+  bookmarks             Bookmark[]
+  jobSessions           JobRecommendationSession[]
 }
 
 model Account {
@@ -196,6 +197,44 @@ model UsageLog {
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model JobRecommendationSession {
+  id            String   @id @default(uuid())
+  userId        String
+  resumeId      String
+  cacheKey      String
+  extractedData String
+  generatedAt   DateTime @default(now())
+  refreshedAt   DateTime @default(now())
+
+  user User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobs RecommendedJob[]
+
+  @@unique([userId, cacheKey])
+}
+
+model RecommendedJob {
+  id               String   @id @default(uuid())
+  sessionId        String
+  jobId            String
+  title            String
+  employer         String
+  location         String
+  remote           Boolean  @default(false)
+  salary           String?
+  employmentType   String?
+  description      String?
+  shortDescription String?
+  applyUrl         String?
+  source           String   @default("jsearch")
+  datePosted       String?
+  score            Float    @default(0)
+  rawData          String?
+
+  session JobRecommendationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, jobId])
 }
 
 model Bookmark {
