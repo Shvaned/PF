@@ -1,4 +1,5 @@
-import { getOpenAI } from "@/lib/ai";
+import { generateCompletion } from "@/lib/llm/router";
+import { extractJSON } from "@/lib/llm/validation";
 
 export interface ExtractedProfile {
   target_roles: string[];
@@ -9,8 +10,6 @@ export interface ExtractedProfile {
 }
 
 export async function extractProfile(resumeContent: string): Promise<ExtractedProfile> {
-  const openai = getOpenAI();
-
   const prompt = `You are a job matching engine for entry-level candidates (0-2 years experience).
 
 Extract structured data from this resume. Return ONLY a JSON object:
@@ -33,18 +32,17 @@ Rules:
 Resume:
 ${resumeContent.slice(0, 3000)}`;
 
-  const res = await openai.chat.completions.create({
-    model: "google/gemma-4-31b-it:free",
+  const res = await generateCompletion({
+    task: "job-extraction",
     messages: [{ role: "user", content: prompt }],
     temperature: 0.1,
     max_tokens: 500,
+    validate: (c) => extractJSON(c) !== null,
   });
 
   const content = res.choices[0]?.message?.content?.trim() || "";
-  const match = content.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error("Failed to parse extraction response");
-
-  const parsed = JSON.parse(match[0]);
+  const parsed = extractJSON(content);
+  if (!parsed) throw new Error("Failed to parse extraction response");
 
   return {
     target_roles: parsed.target_roles?.slice(0, 3) || [],

@@ -34,7 +34,16 @@ const relevanceBadge: Record<string, string> = {
   low: "text-gray-400",
 };
 
+function normalizeToArray(v: any): any[] {
+  if (Array.isArray(v)) return v;
+  if (v && typeof v === "object") return [v];
+  return [];
+}
+
 export default function QuestionAccordion({ questions, guidance, showBookmarks = true }: Props) {
+  const safeQuestions = normalizeToArray(questions);
+  const safeGuidance = normalizeToArray(guidance);
+
   const [openId, setOpenId] = useState<string | null>(null);
   const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
   const [loadingBookmark, setLoadingBookmark] = useState<string | null>(null);
@@ -54,7 +63,7 @@ export default function QuestionAccordion({ questions, guidance, showBookmarks =
   const toggleBookmark = useCallback(async (q: Question) => {
     setLoadingBookmark(q.id);
     try {
-      const guide = guidance.find((g) => g.questionId === q.id);
+      const guide = safeGuidance.find((g: any) => g.questionId === q.id);
       const res = await fetch("/api/bookmarks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -78,12 +87,12 @@ export default function QuestionAccordion({ questions, guidance, showBookmarks =
     } finally {
       setLoadingBookmark(null);
     }
-  }, [guidance]);
+  }, [safeGuidance]);
 
   return (
     <div className="space-y-2">
-      {questions.map((q) => {
-        const guide = guidance.find((g) => g.questionId === q.id);
+      {safeQuestions.map((q) => {
+        const guide = safeGuidance.find((g: any) => g.questionId === q.id);
         const isOpen = openId === q.id;
         const isBookmarked = bookmarkedIds.has(q.question);
 
@@ -138,7 +147,7 @@ export default function QuestionAccordion({ questions, guidance, showBookmarks =
                 <div>
                   <h4 className="text-xs font-medium text-[#111827] mb-1.5">Key points to mention</h4>
                   <ul className="space-y-1">
-                    {guide.keyPoints.map((p, i) => (
+                    {guide.keyPoints.map((p: any, i: number) => (
                       <li key={i} className="text-sm text-[#6B7280] flex gap-2">
                         <span className="text-[#22C55E] mt-0.5">+</span>
                         {p}
@@ -149,7 +158,7 @@ export default function QuestionAccordion({ questions, guidance, showBookmarks =
                 <div>
                   <h4 className="text-xs font-medium text-[#111827] mb-1.5">Don&apos;t forget</h4>
                   <ul className="space-y-1">
-                    {guide.dontForget.map((p, i) => (
+                    {guide.dontForget.map((p: any, i: number) => (
                       <li key={i} className="text-sm text-[#6B7280] flex gap-2">
                         <span className="text-[#EF4444] mt-0.5">!</span>
                         {p}

@@ -18,8 +18,13 @@ export default async function PrepPage({ params }: { params: Promise<{ analysisI
     redirect("/dashboard");
   }
 
-  const questions = JSON.parse(analysis.questions);
-  const guidance = JSON.parse(analysis.answerGuidance);
+  const parsedQuestions = JSON.parse(analysis.questions);
+  const parsedGuidance = JSON.parse(analysis.answerGuidance);
+
+  // Defensive normalization — LLM output may vary in structure
+  const questions = Array.isArray(parsedQuestions) ? parsedQuestions : [];
+  const guidance = Array.isArray(parsedGuidance) ? parsedGuidance : [];
+
   const isPremium = user.isPremium;
 
   const visibleQuestions = isPremium ? questions : questions.slice(0, VISIBLE_COUNT);

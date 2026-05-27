@@ -1,10 +1,6 @@
-import OpenAI from "openai";
-
-let _openai: OpenAI | null = null;
-export function getOpenAI() {
-  if (!_openai) _openai = new OpenAI({ baseURL: "https://openrouter.ai/api/v1", apiKey: process.env.OPENROUTER_API_KEY });
-  return _openai;
-}
+import { generateCompletion } from "@/lib/llm/router";
+import { buildCacheKey, cacheGet, cacheSet } from "@/lib/llm/cache";
+import { extractJSON, extractJSONArray } from "@/lib/llm/validation";
 
 interface AnalysisInput {
   resumeText: string;
@@ -52,16 +48,21 @@ interface EvaluateAnswerInput {
   resumeText: string;
 }
 
-export async function analyzeResumeAndJob(
-  input: AnalysisInput
-): Promise<AnalysisResult> {
+/* ── Resume + JD Analysis (Nemotron → GLM → GPT-OSS) — 4000 tokens ── */
+
+export async function analyzeResumeAndJob(input: AnalysisInput): Promise<AnalysisResult> {
+  const cacheKey = buildCacheKey(input);
+  const cached = cacheGet(cacheKey);
+  if (cached) {
+    console.log("[AI] cache_hit analysis");
+    return JSON.parse(cached);
+  }
+
   const roleHint = input.roleCategory && input.roleCategory !== "general"
     ? `\nThe candidate is targeting a ${input.roleCategory} role. Tailor your analysis, questions, and keywords to this field.\n`
     : "";
 
-  const prompt = `You are an expert interview coach and resume analyst for entry-level job seekers (0-2 years experience).
-
-Analyze the following resume and job description. Return a structured JSON response.
+  const prompt = `Analyze this resume against the job description. Return ONLY valid JSON (no markdown):
 
 Resume:
 ${input.resumeText}
@@ -69,99 +70,57 @@ ${input.resumeText}
 Job Description:
 ${input.jobDescription}${roleHint}
 
-Return ONLY a valid JSON object with this exact structure (no markdown, no extra text):
-{
-  "matchScore": <number 0-100>,
-  "strengths": ["<string>", ...],
-  "missingKeywords": ["<string>", ...],
-  "weakAreas": ["<string>", ...],
-  "resumeImprovements": ["<string>", ...],
-  "summary": "<2-3 sentence practical summary>",
-  "jobCategory": "<inferred category>",
-  "questions": [
-    {
-      "id": "q1",
-      "type": "technical|behavioral|hr|mixed",
-      "question": "<tailored question>",
-      "relevance": "high|medium|low"
-    }
-  ],
-  "answerGuidance": [
-    {
-      "questionId": "q1",
-      "keyPoints": ["<concise point>"],
-      "dontForget": ["<important reminder>"]
-    }
-  ]
-}
+JSON structure:
+{"matchScore":<0-100>,"strengths":["..."],"missingKeywords":["..."],"weakAreas":["..."],"resumeImprovements":["..."],"summary":"<2-3 sentences>","jobCategory":"<category>","questions":[{"id":"q1","type":"technical|behavioral|hr|mixed","question":"...","relevance":"high|medium|low"}],"answerGuidance":[{"questionId":"q1","keyPoints":["..."],"dontForget":["..."]}]}
 
-Rules:
-- Generate 8-12 questions mixed across types, ordered by relevance.
-- Each question must directly relate to the resume or job description.
-- Keep strengths/weaknesses/keywords to 3-6 items each.
-- Keep keyPoints to 2-4 bullets per question.
-- Be specific and practical — no generic filler.
-- Identify missing skills honestly.`;
+Be concise. 8-12 questions. 3-6 items per list. No filler.`;
 
-  const response = await getOpenAI().chat.completions.create({
-    model: "google/gemma-4-31b-it:free",
+  const response = await generateCompletion({
+    task: "resume-analysis",
     messages: [{ role: "user", content: prompt }],
     temperature: 0.3,
-    max_tokens: 3000,
+    max_tokens: 4000,
+    validate: (c) => extractJSON(c) !== null,
   });
 
   const content = response.choices[0]?.message?.content?.trim() || "";
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("Failed to parse AI response");
+  const result = extractJSON(content) as AnalysisResult;
+  if (!result) throw new Error("Failed to parse AI response");
 
-  const result: AnalysisResult = JSON.parse(jsonMatch[0]);
+  cacheSet(cacheKey, JSON.stringify(result));
   return result;
 }
 
-export async function generateMockQuestions(
-  config: MockInterviewConfig
-): Promise<Question[]> {
-  const prompt = `You are an interview coach creating mock interview questions for an entry-level candidate.
+/* ── Mock Interview Questions (Laguna → Nemotron) — 2000 tokens ── */
 
-Resume: ${config.resumeText}
-Job Description: ${config.jobDescription}
-Difficulty: ${config.difficulty}
-Question focus: ${config.questionTypes}
-Number of questions: ${config.questionCount}
+export async function generateMockQuestions(config: MockInterviewConfig): Promise<Question[]> {
+  const prompt = `Create ${config.questionCount} ${config.difficulty} ${config.questionTypes} interview questions. Return ONLY a JSON array (no markdown):
 
-Return ONLY a valid JSON array of question objects (no markdown, no extra text):
-[
-  {
-    "id": "mq1",
-    "type": "technical|behavioral|hr|mixed",
-    "question": "<the question>",
-    "relevance": "high|medium|low"
-  }
-]
+Resume: ${config.resumeText.slice(0, 1500)}
+Job Description: ${config.jobDescription.slice(0, 1500)}
 
-Rules:
-- Match the difficulty level (beginner = basic, standard = moderate, hard = challenging).
-- Focus on the requested question types.
-- Make each question specific to the resume and job description.
-- Order from warm-up to deeper questions.`;
+Format: [{"id":"mq1","type":"technical|behavioral|hr|mixed","question":"...","relevance":"high|medium|low"}]
 
-  const response = await getOpenAI().chat.completions.create({
-    model: "google/gemma-4-31b-it:free",
+Order warm-up to deep. Be specific to resume/JD.`;
+
+  const response = await generateCompletion({
+    task: "mock-questions",
     messages: [{ role: "user", content: prompt }],
     temperature: 0.7,
     max_tokens: 2000,
+    validate: (c) => extractJSONArray(c) !== null,
   });
 
   const content = response.choices[0]?.message?.content?.trim() || "";
-  const jsonMatch = content.match(/\[[\s\S]*\]/);
-  if (!jsonMatch) throw new Error("Failed to parse AI response");
+  const result = extractJSONArray(content) as Question[];
+  if (!result) throw new Error("Failed to parse AI response");
 
-  return JSON.parse(jsonMatch[0]);
+  return result;
 }
 
-export async function evaluateAnswer(
-  input: EvaluateAnswerInput
-): Promise<{
+/* ── Answer Evaluation (Nemotron → Laguna) — 800 tokens ── */
+
+export async function evaluateAnswer(input: EvaluateAnswerInput): Promise<{
   clarity: number;
   relevance: number;
   confidence: number;
@@ -169,41 +128,32 @@ export async function evaluateAnswer(
   feedback: string;
   missingPoints: string[];
 }> {
-  const prompt = `You are an expert interview coach evaluating an entry-level candidate's mock interview answer.
+  const prompt = `Evaluate this entry-level candidate's answer. Return ONLY valid JSON (no markdown):
 
 Question: ${input.question}
-Candidate's Answer: ${input.userAnswer}
-Job Description: ${input.jobDescription}
-Resume (context): ${input.resumeText}
+Answer: ${input.userAnswer.slice(0, 2000)}
+Job: ${input.jobDescription.slice(0, 1000)}
 
-Return ONLY a valid JSON object (no markdown, no extra text):
-{
-  "clarity": <1-10>,
-  "relevance": <1-10>,
-  "confidence": <1-10>,
-  "structure": <1-10>,
-  "feedback": "<2-3 sentences of constructive, friendly feedback>",
-  "missingPoints": ["<key point the candidate missed>"]
-}
+JSON: {"clarity":<1-10>,"relevance":<1-10>,"confidence":<1-10>,"structure":<1-10>,"feedback":"<2-3 sentences, constructive>","missingPoints":["..."]}
 
-Rules:
-- Be constructive, not harsh — this is for entry-level candidates.
-- Keep feedback practical and actionable.
-- Only list genuinely missing points — don't invent weaknesses.`;
+Be constructive, specific, actionable.`;
 
-  const response = await getOpenAI().chat.completions.create({
-    model: "google/gemma-4-31b-it:free",
+  const response = await generateCompletion({
+    task: "weak-feedback",
     messages: [{ role: "user", content: prompt }],
     temperature: 0.3,
-    max_tokens: 1000,
+    max_tokens: 800,
+    validate: (c) => extractJSON(c) !== null,
   });
 
   const content = response.choices[0]?.message?.content?.trim() || "";
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("Failed to parse AI response");
+  const result = extractJSON(content);
+  if (!result) throw new Error("Failed to parse AI response");
 
-  return JSON.parse(jsonMatch[0]);
+  return result;
 }
+
+/* ── Final Report (Nemotron → Laguna) — 2000 tokens ── */
 
 export async function generateFinalReport(results: {
   questions: string[];
@@ -218,45 +168,27 @@ export async function generateFinalReport(results: {
   improvementTips: string[];
   nextStep: string;
 }> {
-  const prompt = `You are an interview coach providing a final report for an entry-level candidate.
+  const prompt = `Final interview report for entry-level candidate. Return ONLY valid JSON (no markdown):
 
-Interview results:
-${results.questions.map((q, i) => `Q${i + 1}: ${q}\nA${i + 1}: ${results.answers[i] || "(no answer)"}`).join("\n\n")}
+Q&A: ${results.questions.map((q, i) => `Q${i + 1}: ${q.slice(0, 100)}\nA${i + 1}: ${(results.answers[i] || "").slice(0, 200)}`).join("\n")}
 
-Scores per question:
-${JSON.stringify(results.scores, null, 2)}
+Scores: ${JSON.stringify(results.scores)}
 
-Return ONLY a valid JSON object (no markdown, no extra text):
-{
-  "overallScore": <1-100>,
-  "categoryScores": [
-    {"name": "Communication", "score": <1-10>},
-    {"name": "Technical Depth", "score": <1-10>},
-    {"name": "Confidence", "score": <1-10>},
-    {"name": "Problem Solving", "score": <1-10>}
-  ],
-  "strongestArea": "<single area name>",
-  "weakestArea": "<single area name>",
-  "recurringWeakAreas": ["<pattern>"],
-  "improvementTips": ["<actionable tip>"],
-  "nextStep": "<one concrete next practice recommendation>"
-}
+JSON: {"overallScore":<1-100>,"categoryScores":[{"name":"Communication","score":<1-10>},{"name":"Technical Depth","score":<1-10>},{"name":"Confidence","score":<1-10>},{"name":"Problem Solving","score":<1-10>}],"strongestArea":"...","weakestArea":"...","recurringWeakAreas":["..."],"improvementTips":["..."],"nextStep":"..."}
 
-Rules:
-- Be honest but encouraging.
-- Make tips specific and actionable.
-- Recommend next steps based on the weakest area.`;
+Be honest, encouraging, specific.`;
 
-  const response = await getOpenAI().chat.completions.create({
-    model: "google/gemma-4-31b-it:free",
+  const response = await generateCompletion({
+    task: "weak-feedback",
     messages: [{ role: "user", content: prompt }],
     temperature: 0.3,
-    max_tokens: 1500,
+    max_tokens: 2000,
+    validate: (c) => extractJSON(c) !== null,
   });
 
   const content = response.choices[0]?.message?.content?.trim() || "";
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("Failed to parse AI response");
+  const result = extractJSON(content);
+  if (!result) throw new Error("Failed to parse AI response");
 
-  return JSON.parse(jsonMatch[0]);
+  return result;
 }
