@@ -34,7 +34,7 @@ Resume:
 ${resumeContent.slice(0, 3000)}`;
 
   const res = await openai.chat.completions.create({
-    model: "openai/gpt-oss-120b:free",
+    model: "google/gemma-4-31b-it:free",
     messages: [{ role: "user", content: prompt }],
     temperature: 0.1,
     max_tokens: 500,

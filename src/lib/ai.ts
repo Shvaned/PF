@@ -104,7 +104,7 @@ Rules:
 - Identify missing skills honestly.`;
 
   const response = await getOpenAI().chat.completions.create({
-    model: "openai/gpt-oss-120b:free",
+    model: "google/gemma-4-31b-it:free",
     messages: [{ role: "user", content: prompt }],
     temperature: 0.3,
     max_tokens: 3000,
@@ -146,7 +146,7 @@ Rules:
 - Order from warm-up to deeper questions.`;
 
   const response = await getOpenAI().chat.completions.create({
-    model: "openai/gpt-oss-120b:free",
+    model: "google/gemma-4-31b-it:free",
     messages: [{ role: "user", content: prompt }],
     temperature: 0.7,
     max_tokens: 2000,
@@ -192,7 +192,7 @@ Rules:
 - Only list genuinely missing points — don't invent weaknesses.`;
 
   const response = await getOpenAI().chat.completions.create({
-    model: "openai/gpt-oss-120b:free",
+    model: "google/gemma-4-31b-it:free",
     messages: [{ role: "user", content: prompt }],
     temperature: 0.3,
     max_tokens: 1000,
@@ -248,7 +248,7 @@ Rules:
 - Recommend next steps based on the weakest area.`;
 
   const response = await getOpenAI().chat.completions.create({
-    model: "openai/gpt-oss-120b:free",
+    model: "google/gemma-4-31b-it:free",
     messages: [{ role: "user", content: prompt }],
     temperature: 0.3,
     max_tokens: 1500,
