@@ -21,7 +21,9 @@ interface ProfileContext {
   roles?: string[];
   skills?: string[];
   location?: string | null;
+  city?: string | null;
   experienceLevel?: string;
+  remote_ok?: boolean;
 }
 
 const loadingMessages = [
@@ -55,6 +57,7 @@ export default function JobHuntPage() {
     return { ...DEFAULT_FILTERS };
   });
   const [showFilters, setShowFilters] = useState(false);
+  const [showSetupFilters, setShowSetupFilters] = useState(false);
 
   const loadingRef = useRef(false);
   const generatingRef = useRef(false);
@@ -94,29 +97,49 @@ export default function JobHuntPage() {
   async function extractProfileAndShowSetup() {
     setPhase("extracting");
     try {
+      // Check for existing cached session first
       const res = await fetch("/api/jobs/session");
       const data = await res.json().catch(() => ({}));
 
-      // If compatible cache exists with jobs, restore instantly
       if (data.sessions?.length > 0 && data.sessions[0].jobs?.length > 0) {
+        const cachedProfile = data.sessions[0].extractedData;
+        console.log("[JOBS] resume_scan", { source: "cache", jobCount: data.sessions[0].jobs.length });
         setJobs(data.sessions[0].jobs);
         setSessionId(data.sessions[0].id);
         setFresh(true);
-        // Also need profile context — fetch from session's extractedData or just show results
+        if (cachedProfile) {
+          try {
+            const p = typeof cachedProfile === "string" ? JSON.parse(cachedProfile) : cachedProfile;
+            setProfileContext({
+              roles: p.target_roles,
+              skills: p.skills,
+              location: p.preferred_locations?.[0],
+              experienceLevel: p.experience_level,
+              remote_ok: p.remote_ok,
+            });
+          } catch {}
+        }
         setPhase("ready");
         return;
       }
 
-      // No cache → show setup card. Extract profile for defaults.
+      // No cache — extract profile for defaults
+      console.log("[JOBS] resume_scan", { source: "extraction" });
       try {
         const profileRes = await fetch("/api/jobs/profile", { method: "POST" });
         if (profileRes.ok) {
           const profile = await profileRes.json();
+          console.log("[JOBS] inferred_profile", {
+            roles: profile.roles,
+            skills: profile.skills?.slice(0, 3),
+            location: profile.location,
+            experience: profile.experienceLevel,
+          });
           setProfileContext(profile);
-          // Set filter defaults from profile
           setFilters((prev) => ({
             ...prev,
             country: profile.location || prev.country,
+            city: profile.city || prev.city,
             experienceLevels: profile.experienceLevel ? [profile.experienceLevel] : prev.experienceLevels,
             remoteMode: profile.remote_ok ? "remote" : "all",
           }));
@@ -134,6 +157,14 @@ export default function JobHuntPage() {
   async function handleFindJobs() {
     if (generatingRef.current) return;
     generatingRef.current = true;
+
+    console.log("[JOBS] first_search", {
+      country: filters.country,
+      remoteMode: filters.remoteMode,
+      experienceLevels: filters.experienceLevels,
+      employmentTypes: filters.employmentTypes,
+      hasExistingJobs: jobs.length > 0,
+    });
 
     setPhase("generating");
     setError("");
@@ -264,25 +295,95 @@ export default function JobHuntPage() {
     );
   }
 
-  // ── Setup — preliminary filters before search ──
+  // ── Setup — AI resume scan complete, ask user if they want tailored jobs ──
   if (phase === "setup") {
+    const hasProfile = (profileContext?.roles?.length ?? 0) > 0;
     return (
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
-          <h1 className="text-[24px] font-semibold text-[#111827]">Find jobs tailored to your profile</h1>
-          <p className="text-sm text-[#6B7280] mt-1">Customize your search preferences, then we'll find the best matches.</p>
+          <h1 className="text-[24px] font-semibold text-[#111827]">Job Hunt with AI</h1>
         </div>
 
-        <JobFilters
-          mode="setup"
-          filters={filters}
-          onChange={handleFilterChange}
-          countryOptions={countryOptions}
-          cityOptions={cityOptions}
-          profileSkills={profileContext?.skills || []}
-          profileExperience={profileContext?.experienceLevel || "entry"}
-          onFindJobs={handleFindJobs}
-        />
+        {/* Intelligent prompt card */}
+        <Card className="animate-fade-in-up">
+          <div className="text-center py-4">
+            <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-[#EFF6FF] flex items-center justify-center">
+              <svg className="w-6 h-6 text-[#2563EB]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+            </div>
+
+            <h2 className="text-[18px] font-semibold text-[#111827] mb-2">
+              {hasProfile ? "Jobs matched to your profile" : "Want us to find jobs tailored to your resume?"}
+            </h2>
+
+            {hasProfile && (
+              <p className="text-sm text-[#6B7280] mb-4">
+                We found a strong fit for:
+              </p>
+            )}
+
+            {/* Profile highlights */}
+            {hasProfile && (
+              <div className="flex flex-wrap justify-center gap-2 mb-5">
+                {profileContext?.roles?.slice(0, 2).map((r: string, i: number) => (
+                  <span key={i} className="text-xs px-3 py-1.5 rounded-full bg-[#EFF6FF] text-[#2563EB] font-medium">
+                    {r}
+                  </span>
+                ))}
+                {profileContext?.skills?.slice(0, 3).map((s: string, i: number) => (
+                  <span key={i} className="text-xs px-3 py-1.5 rounded-full bg-[#F0FDF4] text-[#16A34A] font-medium">
+                    {s}
+                  </span>
+                ))}
+                {profileContext?.experienceLevel && (
+                  <span className="text-xs px-3 py-1.5 rounded-full bg-[#FFF7ED] text-[#EA580C] font-medium capitalize">
+                    {profileContext?.experienceLevel}-level
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Location + remote hint */}
+            <p className="text-xs text-[#9CA3AF] mb-6">
+              {profileContext?.location && `Based in ${profileContext.location}`}
+              {profileContext?.location && profileContext?.remote_ok && " · "}
+              {profileContext?.remote_ok && "Open to remote"}
+            </p>
+
+            {/* CTAs */}
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <button onClick={handleFindJobs}
+                className="px-8 py-3 bg-[#2563EB] text-white text-sm font-semibold rounded-[14px] hover:bg-[#1D4ED8] transition-all hover:shadow-lg hover:-translate-y-0.5">
+                Find Jobs
+              </button>
+              <button onClick={() => setShowSetupFilters(!showSetupFilters)}
+                className={`px-6 py-3 text-sm font-medium rounded-[14px] border transition-colors ${
+                  showSetupFilters
+                    ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB]"
+                    : "border-[#E5E7EB] text-[#6B7280] hover:border-[#D1D5DB]"
+                }`}>
+                {showSetupFilters ? "Hide Filters" : "Adjust Filters"}
+              </button>
+            </div>
+          </div>
+        </Card>
+
+        {/* Expandable filters panel */}
+        {showSetupFilters && (
+          <div className="mt-4 animate-fade-in">
+            <JobFilters
+              mode="setup"
+              filters={filters}
+              onChange={handleFilterChange}
+              countryOptions={countryOptions}
+              cityOptions={cityOptions}
+              profileSkills={profileContext?.skills || []}
+              profileExperience={profileContext?.experienceLevel || "entry"}
+              onFindJobs={handleFindJobs}
+            />
+          </div>
+        )}
       </div>
     );
   }
