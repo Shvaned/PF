@@ -11,6 +11,8 @@ export interface JobResult {
   applyUrl: string | null;
   source: string;
   datePosted: string | null;
+  score?: number;
+  matchReasons?: string[];
   rawData: any;
 }
 

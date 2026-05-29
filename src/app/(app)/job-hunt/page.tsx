@@ -1,17 +1,27 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
+import JobFilters from "@/components/jobs/JobFilters";
+import { applyFilters, buildCountryOptions, buildCityOptions, DEFAULT_FILTERS } from "@/lib/jobs/filter-engine";
+import type { FilterState } from "@/lib/jobs/filter-engine";
 
 interface Job {
   jobId: string; title: string; employer: string; location: string;
   remote: boolean; salary: string | null; employmentType: string | null;
   description: string | null; shortDescription: string | null;
   applyUrl: string | null; source: string; datePosted: string | null;
-  score: number; rawData?: any;
+  score: number; matchReasons?: string[]; rawData?: any;
+}
+
+interface ProfileContext {
+  roles?: string[];
+  skills?: string[];
+  location?: string | null;
+  experienceLevel?: string;
 }
 
 const loadingMessages = [
@@ -22,22 +32,28 @@ const loadingMessages = [
   "Personalizing recommendations...",
 ];
 
-const REFRESH_COOLDOWN_MIN = 15; // minutes
-
 export default function JobHuntPage() {
   const router = useRouter();
 
-  const [phase, setPhase] = useState<"loading" | "noResume" | "generating" | "ready" | "empty" | "error">("loading");
+  // Phases: extracting → setup → generating → ready → empty → error → noResume
+  const [phase, setPhase] = useState<"extracting" | "setup" | "noResume" | "generating" | "ready" | "empty" | "error">("extracting");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [fresh, setFresh] = useState(false);
   const [loadingIdx, setLoadingIdx] = useState(0);
   const [expandedJob, setExpandedJob] = useState<Job | null>(null);
   const [error, setError] = useState("");
-  const [lastRefresh, setLastRefresh] = useState<number | null>(null);
+  const [debugInfo, setDebugInfo] = useState<{ rawCount?: number; dedupedCount?: number; mergedFromCache?: number; queries?: string[] } | null>(null);
+  const [profileContext, setProfileContext] = useState<ProfileContext | null>(null);
 
-  // Filters
-  const [remoteOnly, setRemoteOnly] = useState(false);
+  // Filters — persisted to localStorage
+  const [filters, setFilters] = useState<FilterState>(() => {
+    try {
+      const saved = localStorage.getItem("jobhunt_filters");
+      if (saved) return { ...DEFAULT_FILTERS, ...JSON.parse(saved) };
+    } catch {}
+    return { ...DEFAULT_FILTERS };
+  });
   const [showFilters, setShowFilters] = useState(false);
 
   const loadingRef = useRef(false);
@@ -53,11 +69,11 @@ export default function JobHuntPage() {
     return () => { document.body.style.overflow = ""; };
   }, [expandedJob]);
 
-  // Init — only runs once
+  // Step 1: Extract profile only — do NOT auto-search
   useEffect(() => {
     if (loadingRef.current) return;
     loadingRef.current = true;
-    init();
+    extractProfileAndShowSetup();
   }, []);
 
   // Animate loading messages
@@ -69,38 +85,72 @@ export default function JobHuntPage() {
     return () => clearInterval(timer);
   }, [phase]);
 
-  async function init() {
-    setPhase("loading");
+  // Persist filters to localStorage
+  useEffect(() => {
+    try { localStorage.setItem("jobhunt_filters", JSON.stringify(filters)); } catch {}
+  }, [filters]);
+
+  // Step 1: Extract resume profile + check for compatible cache
+  async function extractProfileAndShowSetup() {
+    setPhase("extracting");
     try {
       const res = await fetch("/api/jobs/session");
-      if (!res.ok) throw new Error("Failed");
+      const data = await res.json().catch(() => ({}));
 
-      const data = await res.json();
-      // Check cache first
+      // If compatible cache exists with jobs, restore instantly
       if (data.sessions?.length > 0 && data.sessions[0].jobs?.length > 0) {
         setJobs(data.sessions[0].jobs);
         setSessionId(data.sessions[0].id);
         setFresh(true);
-        setLastRefresh(Date.now());
+        // Also need profile context — fetch from session's extractedData or just show results
         setPhase("ready");
         return;
       }
 
-      await generateRecommendations();
+      // No cache → show setup card. Extract profile for defaults.
+      try {
+        const profileRes = await fetch("/api/jobs/profile", { method: "POST" });
+        if (profileRes.ok) {
+          const profile = await profileRes.json();
+          setProfileContext(profile);
+          // Set filter defaults from profile
+          setFilters((prev) => ({
+            ...prev,
+            country: profile.location || prev.country,
+            experienceLevels: profile.experienceLevel ? [profile.experienceLevel] : prev.experienceLevels,
+            remoteMode: profile.remote_ok ? "remote" : "all",
+          }));
+        }
+      } catch {}
+
+      setPhase("setup");
     } catch {
       setPhase("error");
-      setError("Could not load. Please try again.");
+      setError("Could not load profile. Please try again.");
     }
   }
 
-  async function generateRecommendations() {
-    if (generatingRef.current) return; // deduplicate requests
+  // Step 2: User clicked "Find Jobs" — now we search
+  async function handleFindJobs() {
+    if (generatingRef.current) return;
     generatingRef.current = true;
 
     setPhase("generating");
     setError("");
+    setDebugInfo(null);
     try {
-      const res = await fetch("/api/jobs/recommend", { method: "POST" });
+      const body: any = {};
+      if (filters.country) body.country = filters.country;
+      if (filters.city) body.city = filters.city;
+      if (filters.datePosted !== "month") body.datePosted = filters.datePosted;
+      if (filters.remoteMode !== "all") body.remoteMode = filters.remoteMode;
+      if (filters.employmentTypes.length > 0) body.employmentTypes = filters.employmentTypes;
+
+      const res = await fetch("/api/jobs/recommend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
       const data = await res.json();
 
       if (res.status === 400 && data.error?.includes("No resume selected")) {
@@ -110,6 +160,14 @@ export default function JobHuntPage() {
 
       if (!res.ok) throw new Error(data.error || "Failed");
 
+      setDebugInfo({
+        rawCount: data.rawCount,
+        dedupedCount: data.dedupedCount,
+        mergedFromCache: data.mergedFromCache,
+        queries: data.queries,
+      });
+      if (data.profile) setProfileContext(data.profile);
+
       if (data.jobs?.length === 0) {
         setPhase("empty");
         return;
@@ -118,7 +176,6 @@ export default function JobHuntPage() {
       setJobs(data.jobs);
       setSessionId(data.sessionId);
       setFresh(data.fresh);
-      setLastRefresh(Date.now());
       setPhase("ready");
     } catch (e: any) {
       setPhase("error");
@@ -128,24 +185,28 @@ export default function JobHuntPage() {
     }
   }
 
-  function canRefresh(): boolean {
-    if (!lastRefresh) return true;
-    const elapsed = (Date.now() - lastRefresh) / 60000;
-    return elapsed >= REFRESH_COOLDOWN_MIN;
+  // Post-search filter change — client-side only, "Apply Filters" commits it
+  function handleFilterChange(next: FilterState) {
+    console.log("[FILTER] local_apply", {
+      before_count: jobs.length,
+      country: next.country,
+      remoteMode: next.remoteMode,
+      experienceLevels: next.experienceLevels,
+      employmentTypes: next.employmentTypes,
+    });
+    setFilters(next);
   }
 
-  function cooldownRemaining(): string {
-    if (!lastRefresh) return "";
-    const elapsed = (Date.now() - lastRefresh) / 60000;
-    const remaining = Math.ceil(REFRESH_COOLDOWN_MIN - elapsed);
-    if (remaining <= 0) return "";
-    return `${remaining}m`;
-  }
+  // Client-side filtering via the filter engine
+  const { jobs: filteredJobs, activeCount: activeFilterCount } = useMemo(() => {
+    const result = applyFilters(jobs as any, filters, profileContext?.skills || []);
+    console.log("[FILTER] after_count", { before: jobs.length, after: result.jobs.length, activeFilters: result.activeCount });
+    return result;
+  }, [jobs, filters, profileContext]);
 
-  const filteredJobs = useMemo(() => {
-    if (remoteOnly) return jobs.filter((j) => j.remote);
-    return jobs;
-  }, [jobs, remoteOnly]);
+  // Build filter option lists from job data
+  const countryOptions = useMemo(() => buildCountryOptions(jobs, profileContext?.location), [jobs, profileContext]);
+  const cityOptions = useMemo(() => buildCityOptions(jobs, profileContext?.location), [jobs, profileContext]);
 
   function scoreColor(s: number) {
     if (s >= 75) return "text-green-600";
@@ -178,14 +239,56 @@ export default function JobHuntPage() {
       <div className="max-w-2xl mx-auto text-center py-16">
         <div className="text-5xl mb-4">📄</div>
         <h1 className="text-[24px] font-semibold text-[#111827] mb-2">Job Hunt with AI</h1>
-        <p className="text-sm text-[#6B7280] mb-6">Select a resume first — we'll find jobs tailored to your profile.</p>
+        <p className="text-sm text-[#6B7280] mb-6">Select a resume first to find jobs tailored to your profile.</p>
         <Button href="/manage-resume">Manage Resume</Button>
       </div>
     );
   }
 
-  // ── Loading / Generating ──
-  if (phase === "loading" || phase === "generating") {
+  // ── Extracting profile ──
+  if (phase === "extracting") {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-[24px] font-semibold text-[#111827]">Job Hunt with AI</h1>
+          <p className="text-sm text-[#6B7280] mt-1">Analyzing your resume...</p>
+        </div>
+        <Card className="text-center py-12">
+          <div className="w-12 h-12 mx-auto mb-4 border-2 border-[#2563EB] border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm font-medium text-[#111827] mb-2">Extracting your skills & preferences</p>
+          <div className="w-48 mx-auto h-1.5 bg-gray-200 rounded-full overflow-hidden mt-4">
+            <div className="h-full bg-[#2563EB] rounded-full animate-pulse" style={{ width: "60%" }} />
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  // ── Setup — preliminary filters before search ──
+  if (phase === "setup") {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-[24px] font-semibold text-[#111827]">Find jobs tailored to your profile</h1>
+          <p className="text-sm text-[#6B7280] mt-1">Customize your search preferences, then we'll find the best matches.</p>
+        </div>
+
+        <JobFilters
+          mode="setup"
+          filters={filters}
+          onChange={handleFilterChange}
+          countryOptions={countryOptions}
+          cityOptions={cityOptions}
+          profileSkills={profileContext?.skills || []}
+          profileExperience={profileContext?.experienceLevel || "entry"}
+          onFindJobs={handleFindJobs}
+        />
+      </div>
+    );
+  }
+
+  // ── Generating (searching) ──
+  if (phase === "generating") {
     return (
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
@@ -211,7 +314,7 @@ export default function JobHuntPage() {
         <h1 className="text-[24px] font-semibold text-[#111827] mb-2">Something went wrong</h1>
         <p className="text-sm text-[#6B7280] mb-4">{error}</p>
         <div className="flex gap-3 justify-center">
-          <Button onClick={generateRecommendations}>Try Again</Button>
+          <Button onClick={handleFindJobs}>Try Again</Button>
           <Link href="/manage-resume" className="text-sm text-[#2563EB] hover:underline py-2.5">Manage Resume</Link>
         </div>
       </div>
@@ -223,19 +326,25 @@ export default function JobHuntPage() {
     return (
       <div className="max-w-2xl mx-auto text-center py-16">
         <div className="text-5xl mb-4">🔍</div>
-        <h1 className="text-[24px] font-semibold text-[#111827] mb-2">No strong matches right now</h1>
-        <p className="text-sm text-[#6B7280] mb-6">
-          We couldn't find good matches for your profile. Try updating your resume with more specific skills, or try again later.
+        <h1 className="text-[24px] font-semibold text-[#111827] mb-2">No jobs found</h1>
+        <p className="text-sm text-[#6B7280] mb-2">
+          No results for your profile{filters.country ? ` in ${filters.country}` : ""}. Try adjusting your preferences.
         </p>
+        {debugInfo?.queries && (
+          <div className="mb-4">
+            <p className="text-[10px] text-[#9CA3AF] mb-1">Search queries used:</p>
+            {debugInfo.queries.map((q: string, i: number) => (
+              <span key={i} className="inline-block text-[10px] px-2 py-0.5 bg-gray-100 rounded-full text-[#6B7280] mr-1 mb-1">{q}</span>
+            ))}
+          </div>
+        )}
         <div className="flex gap-3 justify-center">
-          <Button onClick={generateRecommendations}>Refresh</Button>
+          <Button onClick={() => { setFilters({ ...DEFAULT_FILTERS }); handleFindJobs(); }}>Broaden Search</Button>
           <Link href="/manage-resume" className="text-sm text-[#2563EB] hover:underline py-2.5">Update Resume</Link>
         </div>
       </div>
     );
   }
-
-  const cooldown = cooldownRemaining();
 
   // ── Main Grid ──
   return (
@@ -244,9 +353,17 @@ export default function JobHuntPage() {
         <div>
           <h1 className="text-[24px] font-semibold text-[#111827]">Job Hunt with AI</h1>
           <p className="text-sm text-[#6B7280] mt-1">
-            {jobs.length} jobs tailored to your resume
-            {fresh && " · from cache"}
-            {cooldown && ` · refresh in ${cooldown}`}
+            {jobs.length} jobs matched to your resume
+            {profileContext?.roles && (
+              <span className="ml-2 text-[#2563EB]">· {profileContext.roles[0]}</span>
+            )}
+            {profileContext?.location && (
+              <span className="ml-1 text-[#6B7280]">· {profileContext.location}</span>
+            )}
+            {profileContext?.experienceLevel && (
+              <span className="ml-1 text-[#6B7280]">· {profileContext.experienceLevel}-level</span>
+            )}
+            {fresh && " · cached"}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -256,22 +373,31 @@ export default function JobHuntPage() {
             }`}>
             Filters
           </button>
-          <Button onClick={generateRecommendations} variant="secondary" disabled={!canRefresh()} className="text-sm">
-            {canRefresh() ? "Refresh" : `Wait ${cooldown}`}
-          </Button>
         </div>
       </div>
 
-      {/* Filters bar */}
+      {/* Smart Filters — refine mode, client-side only */}
       {showFilters && (
-        <div className="flex flex-wrap gap-3 mb-5 p-3 bg-white rounded-[12px] border border-[#E5E7EB]">
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={remoteOnly} onChange={(e) => setRemoteOnly(e.target.checked)}
-              className="rounded accent-[#2563EB]" />
-            Remote only
-          </label>
-        </div>
+        <JobFilters
+          mode="refine"
+          filters={filters}
+          onChange={handleFilterChange}
+          countryOptions={countryOptions}
+          cityOptions={cityOptions}
+          profileSkills={profileContext?.skills || []}
+          profileExperience={profileContext?.experienceLevel || "entry"}
+        />
       )}
+
+      {/* Smart summary */}
+      <p className="text-xs text-[#9CA3AF] mb-4">
+        Showing {filteredJobs.length} of {jobs.length} jobs
+        {profileContext?.roles?.[0] && <> · Optimized for: <span className="text-[#111827] font-medium">{profileContext.roles[0]}</span></>}
+        {profileContext?.location && <> · <span className="text-[#111827]">{profileContext.location}</span></>}
+        {profileContext?.experienceLevel && <> · <span className="text-[#111827] capitalize">{profileContext.experienceLevel}-level</span></>}
+        {activeFilterCount > 0 && <> · <span className="text-[#2563EB] font-medium">{activeFilterCount} active filter{activeFilterCount !== 1 ? "s" : ""}</span></>}
+        {debugInfo?.mergedFromCache ? <> · <span className="text-[#22C55E]">+{debugInfo.mergedFromCache} from cache</span></> : null}
+      </p>
 
       {/* Job grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -300,6 +426,17 @@ export default function JobHuntPage() {
               )}
             </div>
 
+            {/* Match reasons */}
+            {job.matchReasons && job.matchReasons.length > 0 && (
+              <div className="flex flex-wrap gap-1 mb-3">
+                {job.matchReasons.map((r: string, i: number) => (
+                  <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#EFF6FF] text-[#2563EB] font-medium">
+                    ✓ {r}
+                  </span>
+                ))}
+              </div>
+            )}
+
             {job.shortDescription && (
               <p className="text-xs text-[#9CA3AF] line-clamp-2 mb-2">{job.shortDescription}</p>
             )}
@@ -312,9 +449,22 @@ export default function JobHuntPage() {
         ))}
       </div>
 
-      {filteredJobs.length === 0 && (
+      {filteredJobs.length === 0 && jobs.length > 0 && (
         <Card className="text-center py-12">
-          <p className="text-sm text-[#6B7280]">No jobs match your filters. Try adjusting.</p>
+          <p className="text-sm font-medium text-[#111827] mb-2">No cached jobs match your current filters</p>
+          <p className="text-xs text-[#6B7280] mb-4">
+            {jobs.length} jobs are cached. Your filters are too restrictive — try broadening them.
+          </p>
+          <div className="flex gap-3 justify-center">
+            <button onClick={() => handleFilterChange({ ...DEFAULT_FILTERS })}
+              className="text-sm text-[#2563EB] hover:underline font-medium">
+              Reset Filters
+            </button>
+            <button onClick={handleFindJobs}
+              className="text-sm text-[#2563EB] hover:underline font-medium">
+              Broaden Search
+            </button>
+          </div>
         </Card>
       )}
 
