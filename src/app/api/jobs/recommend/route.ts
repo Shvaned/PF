@@ -2,7 +2,6 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { extractProfile } from "@/lib/jobs/extraction";
 import { buildCacheKey, buildSearchQueries } from "@/lib/jobs/normalization";
-import { DEFAULT_QUERIES } from "@/lib/jobs/role-synonyms";
 import { getOrCreateSession, replaceJobs, isInCooldown, recordSearchCall } from "@/lib/jobs/cache";
 import { JSearchProvider } from "@/lib/jobs/jsearch";
 import { rankJobs } from "@/lib/jobs/ranking";
@@ -99,43 +98,41 @@ export async function POST(request: Request) {
       });
     }
 
-    // Step 4: Tiered query strategy — stop when enough results found
+    // Step 4: MAX 3 JSearch calls. Hard limit. Search broad, rank narrow.
     const allQueries = buildSearchQueries(profile);
-    console.log("[JOBS] query_strategy", { tiers: allQueries.length, first: allQueries.slice(0, 5) });
+    console.log("[JSEARCH] primary_query", allQueries[0] || "none");
+    console.log("[JSEARCH] secondary_query", allQueries[1] || "none");
+    console.log("[JSEARCH] fallback_query", allQueries[2] || "none");
 
+    const MAX_CALLS = 3;
     const provider = new JSearchProvider(apiKey);
     const results: any[] = [];
-    let tier = 0;
+    let requestCount = 0;
 
     const jsearchParams: any = { page: 1, numPages: 2 };
     if (filterOverrides.datePosted) jsearchParams.datePosted = filterOverrides.datePosted;
     if (filterOverrides.employmentTypes?.length) jsearchParams.employmentTypes = filterOverrides.employmentTypes.join(",");
 
     for (const q of allQueries) {
-      if (results.length >= 40) break;
-      tier++;
+      if (requestCount >= MAX_CALLS) break;
+      requestCount++;
       const jobs = await provider.searchJobs({ query: q, ...jsearchParams });
-      console.log("[JOBS] query_result", { query: q, count: jobs.length, tier });
+      console.log("[JSEARCH] request_count", { query: q, count: jobs.length, call: requestCount, max: MAX_CALLS });
       results.push(...jobs);
-      if (jobs.length === 0 && tier >= 6) {
-        console.log("[JOBS] query_fallback", { query: q, totalSoFar: results.length });
-      }
     }
 
-    // Fallback: if still 0, try broad defaults
-    if (results.length === 0) {
-      console.log("[JSEARCH FALLBACK] all profile queries returned 0, trying defaults");
-      for (const q of DEFAULT_QUERIES) {
-        if (results.length >= 30) break;
-        const jobs = await provider.searchJobs({ query: q, ...jsearchParams });
-        console.log("[JOBS] query_result", { query: q, count: jobs.length, phase: "fallback" });
-        results.push(...jobs);
-      }
+    // Emergency fallback: if all 3 returned 0, try "software engineer" once
+    if (results.length === 0 && requestCount < MAX_CALLS + 1) {
+      requestCount++;
+      const jobs = await provider.searchJobs({ query: "software engineer", page: 1, numPages: 2 });
+      console.log("[JSEARCH] emergency_fallback", { count: jobs.length, totalCalls: requestCount });
+      results.push(...jobs);
     }
 
     // Record the JSearch call timestamp
     recordSearchCall(user.id);
 
+    console.log("[JSEARCH] total_requests", { count: requestCount, results: results.length });
     console.log("[JOBS] pipeline", { stage: "raw", count: results.length });
 
     if (results.length === 0) {

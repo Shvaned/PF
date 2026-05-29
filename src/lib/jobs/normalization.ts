@@ -1,4 +1,3 @@
-import { getRoleQueries } from "./role-synonyms";
 import type { ExtractedProfile } from "./extraction";
 
 const CANONICAL_MAP: Record<string, string> = {
@@ -67,66 +66,46 @@ export function buildCacheKey(profile: ExtractedProfile): string {
 }
 
 /**
- * Builds a tiered search strategy.
- * Returns flat array ordered by priority — route handler stops when enough results found.
+ * Generates EXACTLY 3 broad queries for JSearch.
+ * Search broad, rank narrow. Never more than 3 API calls.
  *
- * Tier 1: role + top 2-3 skills + location   (most relevant)
- * Tier 2: role + location                     (balanced)
- * Tier 3: role + remote                       (remote-friendly)
- * Tier 4: role synonym expansion              (broad)
+ * Primary:   role + location
+ * Secondary: broader role + location (or remote)
+ * Fallback:  generic "software engineer"
  */
 export function buildSearchQueries(profile: ExtractedProfile): string[] {
   const role = normalizeRole(profile.target_roles[0]);
-  const topSkills = normalizeSkills(profile.skills).slice(0, 3);
   const loc = profile.preferred_locations?.[0] || "";
-  const level = profile.experience_level;
-  const seen = new Set<string>();
   const queries: string[] = [];
 
-  const levelPrefix = level === "intern" ? "intern" : level === "entry" ? "entry level" : level === "senior" ? "senior" : "";
-  const roleVariants = getRoleQueries(role);
-
-  // Tier 1: role + top 2 skills + location (limit skills to avoid overfitting)
-  if (topSkills.length > 0) {
-    const skillStr = topSkills.slice(0, 2).join(" ");
-    if (loc) {
-      queries.push(`${role} ${skillStr} ${loc}`.trim());
-      if (levelPrefix) queries.push(`${levelPrefix} ${role} ${skillStr} ${loc}`.trim());
-    }
-    queries.push(`${role} ${skillStr}`.trim());
-    if (levelPrefix) queries.push(`${levelPrefix} ${role} ${skillStr}`.trim());
-  }
-
-  // Tier 2: role + location
+  // Primary: role + location
   if (loc) {
-    queries.push(`${role} ${loc}`.trim());
-    if (levelPrefix) queries.push(`${levelPrefix} ${role} ${loc}`.trim());
+    queries.push(`${role} ${loc}`);
+  } else {
+    queries.push(role);
+    if (profile.remote_ok) queries.push(`${role} remote`);
   }
 
-  // Tier 3: role + remote
-  if (profile.remote_ok) {
-    queries.push(`${role} remote`.trim());
-    if (levelPrefix) queries.push(`${levelPrefix} ${role} remote`.trim());
-  }
-
-  // Tier 4: role synonym expansion
-  for (const v of roleVariants) {
-    if (!seen.has(v)) {
-      seen.add(v);
-      queries.push(v);
-      if (levelPrefix) queries.push(`${levelPrefix} ${v}`.trim());
+  // Secondary: broader role (use second target role if different, else generic alternative)
+  const secondRole = profile.target_roles.length > 1
+    ? normalizeRole(profile.target_roles[1])
+    : role === "software developer" ? "software engineer" : "software developer";
+  if (secondRole !== role) {
+    if (loc) {
+      queries.push(`${secondRole} ${loc}`);
+    } else {
+      queries.push(secondRole);
     }
+  } else if (!profile.remote_ok && loc) {
+    // Add a remote variant as second query
+    queries.push(`${role} remote`);
   }
 
-  // Deduplicate preserving order
-  const unique: string[] = [];
-  const seenQ = new Set<string>();
-  for (const q of queries) {
-    const key = q.toLowerCase();
-    if (!seenQ.has(key)) {
-      seenQ.add(key);
-      unique.push(q);
-    }
+  // Fallback: always "software engineer" (broadest reliable JSearch query)
+  if (!queries.some((q) => q.includes("software engineer"))) {
+    queries.push("software engineer");
   }
-  return unique;
+
+  // Deduplicate
+  return [...new Set(queries)].slice(0, 3);
 }
