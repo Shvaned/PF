@@ -2,6 +2,8 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { evaluateAnswer, generateFinalReport } from "@/lib/ai";
 import { logUsageAction } from "@/lib/usage";
+import { computeAndStoreReadiness } from "@/lib/readiness";
+import { createSnapshot } from "@/lib/performance";
 import { NextRequest } from "next/server";
 
 export async function GET(
@@ -173,6 +175,10 @@ export async function PUT(
     });
 
     logUsageAction(user.id, "mock_interview_completed");
+
+    // Recalculate readiness + create performance snapshot
+    computeAndStoreReadiness(user.id).catch(() => {});
+    createSnapshot(user.id, "mock_interview", id).catch(() => {});
 
     return Response.json({ success: true });
   } catch (error: any) {

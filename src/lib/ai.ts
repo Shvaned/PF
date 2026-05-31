@@ -39,6 +39,7 @@ interface MockInterviewConfig {
   difficulty: "beginner" | "standard" | "hard";
   questionTypes: string;
   questionCount: number;
+  companyName?: string | null;
 }
 
 interface EvaluateAnswerInput {
@@ -94,14 +95,21 @@ Be concise. 8-12 questions. 3-6 items per list. No filler.`;
 /* ── Mock Interview Questions (Laguna → Nemotron) — 2000 tokens ── */
 
 export async function generateMockQuestions(config: MockInterviewConfig): Promise<Question[]> {
+  let companyContext = "";
+  if (config.companyName) {
+    const { buildCompanyPrompt } = await import("@/lib/company-profiles");
+    const { promptExtension } = buildCompanyPrompt(config.companyName);
+    companyContext = promptExtension;
+  }
+
   const prompt = `Create ${config.questionCount} ${config.difficulty} ${config.questionTypes} interview questions. Return ONLY a JSON array (no markdown):
 
 Resume: ${config.resumeText.slice(0, 1500)}
-Job Description: ${config.jobDescription.slice(0, 1500)}
+Job Description: ${config.jobDescription.slice(0, 1500)}${companyContext ? "\n" + companyContext : ""}
 
 Format: [{"id":"mq1","type":"technical|behavioral|hr|mixed","question":"...","relevance":"high|medium|low"}]
 
-Order warm-up to deep. Be specific to resume/JD.`;
+Order warm-up to deep. Be specific to resume/JD${config.companyName ? " and match " + config.companyName + " interview style" : ""}.`;
 
   const response = await generateCompletion({
     task: "mock-questions",

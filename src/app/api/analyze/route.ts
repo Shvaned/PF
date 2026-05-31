@@ -2,6 +2,8 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { analyzeResumeAndJob } from "@/lib/ai";
 import { checkUsageLimit, incrementUsage, logUsageAction } from "@/lib/usage";
+import { computeAndStoreReadiness } from "@/lib/readiness";
+import { recordSnapshot } from "@/lib/resume-lab";
 import { validateResumeText, validateJobDescription, normalizeResumeText } from "@/lib/resume";
 import { NextRequest } from "next/server";
 
@@ -70,6 +72,14 @@ export async function POST(request: NextRequest) {
 
     await incrementUsage(user.id);
     logUsageAction(user.id, "analysis_completed");
+
+    // Recalculate readiness + record resume performance in background
+    computeAndStoreReadiness(user.id).catch(() => {});
+    recordSnapshot(
+      analysis.resumeId,
+      user.id,
+      { matchScore: result.matchScore, analysisId: analysis.id, jobRole: result.jobCategory }
+    ).catch(() => {});
 
     return Response.json({ analysisId: analysis.id });
   } catch (error: any) {

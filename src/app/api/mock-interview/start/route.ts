@@ -2,6 +2,7 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { generateMockQuestions } from "@/lib/ai";
 import { logUsageAction } from "@/lib/usage";
+import { buildCompanyPrompt } from "@/lib/company-profiles";
 import { NextRequest } from "next/server";
 
 export async function POST(request: NextRequest) {
@@ -17,7 +18,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { analysisId, difficulty = "standard", questionTypes = "mixed", questionCount = 5 } = body;
+    const { analysisId, difficulty = "standard", questionTypes = "mixed", questionCount = 5, companyName } = body;
 
     let resumeText = "";
     let jobDescription = "";
@@ -65,6 +66,7 @@ export async function POST(request: NextRequest) {
       difficulty,
       questionTypes,
       questionCount,
+      companyName: companyName || null,
     });
 
     const interview = await prisma.mockInterview.create({

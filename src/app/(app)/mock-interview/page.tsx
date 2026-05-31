@@ -6,6 +6,11 @@ import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import UpgradeModal from "@/components/ui/UpgradeModal";
 
+const COMPANY_OPTIONS = [
+  "None", "Google", "Amazon", "Meta", "Microsoft",
+  "Startup (Early-Stage)", "Product Company", "Service Company (TCS/Infosys/Wipro/Accenture)",
+];
+
 function SetupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -14,6 +19,7 @@ function SetupForm() {
   const [difficulty, setDifficulty] = useState("standard");
   const [questionTypes, setQuestionTypes] = useState("mixed");
   const [questionCount, setQuestionCount] = useState(5);
+  const [companyName, setCompanyName] = useState("None");
   const [loading, setLoading] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
@@ -28,6 +34,7 @@ function SetupForm() {
           difficulty,
           questionTypes,
           questionCount,
+          companyName: companyName !== "None" ? companyName : undefined,
         }),
       });
 
@@ -70,6 +77,24 @@ function SetupForm() {
             </button>
           ))}
         </div>
+      </Card>
+
+      <Card className="mb-5">
+        <h3 className="text-[16px] font-medium text-[#111827] mb-4">
+          Target Company
+        </h3>
+        <select
+          value={companyName}
+          onChange={(e) => setCompanyName(e.target.value)}
+          className="w-full text-sm px-3 py-2.5 rounded-[10px] border border-[#E5E7EB] bg-white focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] outline-none"
+        >
+          {COMPANY_OPTIONS.map((c) => (
+            <option key={c} value={c}>{c === "None" ? "No specific company (generic)" : c}</option>
+          ))}
+        </select>
+        <p className="text-[10px] text-[#9CA3AF] mt-1.5">
+          Questions and evaluation adapt to match the interview style of your target company.
+        </p>
       </Card>
 
       <Card className="mb-5">

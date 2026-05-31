@@ -8,6 +8,7 @@ import Card from "@/components/ui/Card";
 import JobFilters from "@/components/jobs/JobFilters";
 import { applyFilters, buildCountryOptions, buildCityOptions, DEFAULT_FILTERS } from "@/lib/jobs/filter-engine";
 import type { FilterState } from "@/lib/jobs/filter-engine";
+import TailorDiff from "@/components/ui/TailorDiff";
 
 interface Job {
   jobId: string; title: string; employer: string; location: string;
@@ -47,6 +48,8 @@ export default function JobHuntPage() {
   const [error, setError] = useState("");
   const [debugInfo, setDebugInfo] = useState<{ rawCount?: number; dedupedCount?: number; mergedFromCache?: number; queries?: string[] } | null>(null);
   const [profileContext, setProfileContext] = useState<ProfileContext | null>(null);
+  const [tailorResult, setTailorResult] = useState<any>(null);
+  const [tailoringJob, setTailoringJob] = useState<string | null>(null);
 
   // Filters — persisted to localStorage
   const [filters, setFilters] = useState<FilterState>(() => {
@@ -262,6 +265,41 @@ export default function JobHuntPage() {
       params.set("description", job.description.slice(0, 3000));
     }
     router.push(`/analyze?${params.toString()}`);
+  }
+
+  async function handleTailorResume(job: Job) {
+    setTailoringJob(job.jobId);
+    try {
+      // Get selected resume first
+      const resumeRes = await fetch("/api/resumes?mode=recommend&role=" + encodeURIComponent(job.title));
+      const recData = await resumeRes.json();
+      const resumeId = recData.recommended?.id;
+
+      if (!resumeId) {
+        alert("No resume found. Please upload a resume first.");
+        return;
+      }
+
+      const res = await fetch("/api/tailor-resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resumeId,
+          jobDescription: job.description || job.title,
+          jobTitle: job.title,
+          companyName: job.employer,
+          mode: "ats",
+        }),
+      });
+
+      if (!res.ok) throw new Error("Tailoring failed");
+      const data = await res.json();
+      setTailorResult(data);
+    } catch (e: any) {
+      alert(e.message || "Could not tailor resume. Please try again.");
+    } finally {
+      setTailoringJob(null);
+    }
   }
 
   // ── No Resume ──
@@ -569,6 +607,11 @@ export default function JobHuntPage() {
         </Card>
       )}
 
+      {/* ── Tailor Resume modal ── */}
+      {tailorResult && (
+        <TailorDiff result={tailorResult} onClose={() => setTailorResult(null)} />
+      )}
+
       {/* ── Expanded Job Modal ── */}
       {expandedJob && (
         <div
@@ -650,6 +693,12 @@ export default function JobHuntPage() {
               <button onClick={() => handlePrepareForRole(expandedJob)}
                 className="flex-1 py-3 border-2 border-[#2563EB] text-[#2563EB] font-semibold rounded-[14px] hover:bg-[#EFF6FF] transition-colors text-sm">
                 Prepare for This Role
+              </button>
+              <button
+                onClick={() => handleTailorResume(expandedJob)}
+                disabled={tailoringJob === expandedJob.jobId}
+                className="flex-1 py-3 border-2 border-[#7C3AED] text-[#7C3AED] font-semibold rounded-[14px] hover:bg-[#F5F3FF] transition-colors text-sm disabled:opacity-50">
+                {tailoringJob === expandedJob.jobId ? "Tailoring..." : "Tailor Resume"}
               </button>
             </div>
           </div>

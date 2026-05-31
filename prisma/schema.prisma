@@ -36,6 +36,12 @@ model User {
   usageLogs             UsageLog[]
   bookmarks             Bookmark[]
   jobSessions           JobRecommendationSession[]
+  readiness             UserReadiness?
+  performanceSnapshots  WeakAreaSnapshot[]
+  roadmaps              CareerRoadmap[]
+  dailyChallenges       DailyChallenge[]
+  targetCompanies       TargetCompany[]
+  weeklyReports         WeeklyCareerReport[]
 }
 
 model Account {
@@ -75,18 +81,45 @@ model VerificationToken {
 }
 
 model Resume {
-  id         String   @id @default(uuid())
-  userId     String
-  title      String   @default("Untitled Resume")
-  content    String
-  uploadType String   @default("paste")
-  fileName   String?
-  parsedText String?
-  createdAt  DateTime @default(now())
+  id                String   @id @default(uuid())
+  userId            String
+  title             String   @default("Untitled Resume")
+  content           String
+  uploadType        String   @default("paste")
+  fileName          String?
+  parsedText        String?
+  resumeLabel       String?  // user-friendly label like "Backend Resume"
+  resumeType        String?  // backend, fullstack, ml, general, startup, custom
+  timesUsed         Int      @default(0)
+  averageMatchScore Float    @default(0)
+  bestMatchScore    Float    @default(0)
+  totalAnalyses     Int      @default(0)
+  lastUsedAt        DateTime?
+  performanceMetadata String? // JSON: aggregated stats
+  isArchived        Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @default(now()) @updatedAt
 
-  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
   analyses    Analysis[]
-  selectedBy  User?      @relation("SelectedResume")
+  selectedBy  User?                      @relation("SelectedResume")
+  performanceSnapshots ResumePerformanceSnapshot[]
+}
+
+model ResumePerformanceSnapshot {
+  id                   String   @id @default(uuid())
+  resumeId             String
+  userId               String
+  atsScore             Int      @default(0)
+  matchScore           Int      @default(0)
+  resumeQuality        Int      @default(0)
+  technicalStrength    Int      @default(0)
+  behavioralStrength   Int      @default(0)
+  jobRole              String?
+  analysisId           String?
+  createdAt            DateTime @default(now())
+
+  resume Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
 }
 
 model JobDescription {
@@ -248,4 +281,155 @@ model Bookmark {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, question])
+}
+
+model UserReadiness {
+  id                         String   @id @default(uuid())
+  userId                     String   @unique
+  overallScore               Int      @default(0)
+
+  resumeQualityScore         Int      @default(0)
+  atsScore                   Int      @default(0)
+  interviewReadinessScore    Int      @default(0)
+  behavioralConfidenceScore  Int      @default(0)
+  technicalReadinessScore    Int      @default(0)
+  marketCompetitivenessScore Int      @default(0)
+
+  level                      String   @default("beginner") // beginner, developing, competitive, interview-ready
+  strengths                  String   @default("[]")  // JSON array of strings
+  weaknesses                 String   @default("[]")  // JSON array of strings
+
+  lastCalculatedAt           DateTime @default(now())
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model WeakAreaSnapshot {
+  id                    String   @id @default(uuid())
+  userId                String
+
+  communicationScore    Int      @default(0)
+  confidenceScore       Int      @default(0)
+  behavioralScore       Int      @default(0)
+  technicalScore        Int      @default(0)
+  problemSolvingScore   Int      @default(0)
+  structureScore        Int      @default(0)
+  clarityScore          Int      @default(0)
+  relevanceScore        Int      @default(0)
+  leadershipScore       Int      @default(0)
+  systemThinkingScore   Int      @default(0)
+
+  overallInterviewScore Int      @default(0)
+  source                String   @default("mock_interview")
+  sessionId             String?
+
+  createdAt             DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CareerRoadmap {
+  id                String   @id @default(uuid())
+  userId            String
+  title             String
+  goalRole          String?
+  experienceLevel   String?
+  currentReadiness  Int      @default(0)
+  targetReadiness   Int      @default(80)
+  status            String   @default("active")
+  generatedReasoning String?
+  startDate         DateTime @default(now())
+  endDate           DateTime
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks RoadmapTask[]
+}
+
+model RoadmapTask {
+  id                String    @id @default(uuid())
+  roadmapId         String
+  dayNumber         Int
+  weekNumber        Int
+  title             String
+  description       String
+  category          String    @default("resume")
+  priority          String    @default("medium")
+  estimatedMinutes  Int       @default(15)
+  completed         Boolean   @default(false)
+  completionDate    DateTime?
+  improvementImpact String?
+  premium           Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+
+  roadmap CareerRoadmap @relation(fields: [roadmapId], references: [id], onDelete: Cascade)
+}
+
+model DailyChallenge {
+  id                   String    @id @default(uuid())
+  userId               String
+  question             String
+  questionType         String    @default("behavioral")
+  difficulty           String    @default("medium")
+  personalizationReason String?
+  generatedDate        String    // ISO date string — one challenge per day per user
+  completed            Boolean   @default(false)
+  completedAt          DateTime?
+  answerText           String?
+  score                Int?
+  feedback             String?   // JSON { strengths, improvements, scores }
+  createdAt            DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, generatedDate])
+}
+
+model TargetCompany {
+  id              String   @id @default(uuid())
+  userId          String
+  companyName     String
+  companyType     String   @default("product") // faang, product, startup, service, backend
+  targetRole      String?
+  experienceLevel String?
+  priority        Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyName])
+}
+
+model WeeklyCareerReport {
+  id                       String   @id @default(uuid())
+  userId                   String
+  weekStart                String   // ISO date string: "2026-05-26"
+  weekEnd                  String   // ISO date string: "2026-06-01"
+
+  readinessBefore          Int      @default(0)
+  readinessAfter           Int      @default(0)
+
+  interviewConfidenceDelta Int      @default(0)
+  resumeScoreDelta         Int      @default(0)
+  atsScoreDelta            Int      @default(0)
+
+  mockCount                Int      @default(0)
+  challengeCount           Int      @default(0)
+  jobApplicationsCount     Int      @default(0)
+  resumeTailorsCount       Int      @default(0)
+
+  wins                     String   @default("[]")   // JSON string[]
+  focusAreas               String   @default("[]")   // JSON string[]
+  recommendations          String   @default("[]")   // JSON string[]
+  premiumInsights          String?                    // JSON (premium-only)
+
+  createdAt                DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekStart])
 }

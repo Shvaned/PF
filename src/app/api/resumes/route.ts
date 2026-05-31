@@ -1,10 +1,27 @@
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { normalizeResumeText } from "@/lib/resume";
+import { getResumeLabData, recommendResume } from "@/lib/resume-lab";
 
-export async function GET() {
+export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { searchParams } = new URL(request.url);
+  const mode = searchParams.get("mode");
+
+  // Lab mode: full performance data
+  if (mode === "lab") {
+    const data = await getResumeLabData(user.id);
+    return Response.json(data);
+  }
+
+  // Recommend mode: best resume for a role
+  if (mode === "recommend") {
+    const role = searchParams.get("role");
+    const recommended = await recommendResume(user.id, role);
+    return Response.json({ recommended });
+  }
 
   const resumes = await prisma.resume.findMany({
     where: { userId: user.id },

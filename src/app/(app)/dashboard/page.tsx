@@ -9,6 +9,11 @@ import { Suspense } from "react";
 import DailyQuestion from "@/components/ui/DailyQuestion";
 import CareerChecklist from "@/components/ui/CareerChecklist";
 import AnswerTemplates from "@/components/ui/AnswerTemplates";
+import ReadinessCard from "@/components/ui/ReadinessCard";
+import PerformanceCard from "@/components/ui/PerformanceCard";
+import RoadmapCard from "@/components/ui/RoadmapCard";
+import ChallengeCard from "@/components/ui/ChallengeCard";
+import WeeklyReportCard from "@/components/ui/WeeklyReportCard";
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
@@ -91,10 +96,25 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
+      {/* Recruiter Readiness */}
+      <ReadinessCard />
+
+      {/* Weekly Report (below Readiness, above Challenge) */}
+      <WeeklyReportCard />
+
+      {/* Daily Challenge */}
+      <ChallengeCard />
+
       {/* Daily Question */}
       <div className="mb-6">
         <DailyQuestion roleCategory={recentAnalysis?.jobCategory || null} />
       </div>
+
+      {/* 30-Day Roadmap */}
+      <RoadmapCard />
+
+      {/* Interview Performance */}
+      <PerformanceCard />
 
       {/* Career Checklist + Answer Templates */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
