@@ -7,7 +7,7 @@ const links = [
   { href: "/dashboard", label: "Dashboard", icon: HomeIcon },
   { href: "/manage-resume", label: "Manage Resume", icon: DocIcon },
   { href: "/analyze", label: "Analyze Resume", icon: SearchIcon },
-  { href: "/job-hunt", label: "Job Hunt with AI", icon: BriefcaseIcon },
+  { href: "/job-hunt", label: "Job Hunt with AI (Alpha)", icon: BriefcaseIcon },
   { href: "/prep", label: "Interview Prep", icon: MessageIcon },
   { href: "/mock-interview", label: "Mock Interview", icon: MicIcon, premium: true },
   { href: "/history", label: "History", icon: ClockIcon },
@@ -84,7 +84,7 @@ export function MobileNav() {
             }`}
           >
             <link.icon active={isActive} />
-            {link.label === "Analyze Resume" ? "Analyze" : link.label === "Interview Prep" ? "Prep" : link.label === "Job Hunt with AI" ? "Jobs" : link.label}
+            {link.label === "Analyze Resume" ? "Analyze" : link.label === "Interview Prep" ? "Prep" : link.label === "Job Hunt with AI (Alpha)" ? "Jobs" : link.label}
           </Link>
         );
       })}

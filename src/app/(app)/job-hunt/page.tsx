@@ -50,6 +50,7 @@ export default function JobHuntPage() {
   const [profileContext, setProfileContext] = useState<ProfileContext | null>(null);
   const [tailorResult, setTailorResult] = useState<any>(null);
   const [tailoringJob, setTailoringJob] = useState<string | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
 
   // Filters — persisted to localStorage
   const [filters, setFilters] = useState<FilterState>(() => {
@@ -172,6 +173,7 @@ export default function JobHuntPage() {
     setPhase("generating");
     setError("");
     setDebugInfo(null);
+    setUnavailable(false);
     try {
       const body: any = {};
       if (filters.country) body.country = filters.country;
@@ -201,6 +203,8 @@ export default function JobHuntPage() {
         queries: data.queries,
       });
       if (data.profile) setProfileContext(data.profile);
+
+      setUnavailable(!!data.temporarilyUnavailable);
 
       if (data.jobs?.length === 0) {
         setPhase("empty");
@@ -307,7 +311,7 @@ export default function JobHuntPage() {
     return (
       <div className="max-w-2xl mx-auto text-center py-16">
         <div className="text-5xl mb-4">📄</div>
-        <h1 className="text-[24px] font-semibold text-[#111827] mb-2">Job Hunt with AI</h1>
+        <h1 className="text-[24px] font-semibold text-[#111827] mb-2">Job Hunt with AI (Alpha)</h1>
         <p className="text-sm text-[#6B7280] mb-6">Select a resume first to find jobs tailored to your profile.</p>
         <Button href="/manage-resume">Manage Resume</Button>
       </div>
@@ -319,7 +323,7 @@ export default function JobHuntPage() {
     return (
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
-          <h1 className="text-[24px] font-semibold text-[#111827]">Job Hunt with AI</h1>
+          <h1 className="text-[24px] font-semibold text-[#111827]">Job Hunt with AI (Alpha)</h1>
           <p className="text-sm text-[#6B7280] mt-1">Analyzing your resume...</p>
         </div>
         <Card className="text-center py-12">
@@ -339,7 +343,7 @@ export default function JobHuntPage() {
     return (
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
-          <h1 className="text-[24px] font-semibold text-[#111827]">Job Hunt with AI</h1>
+          <h1 className="text-[24px] font-semibold text-[#111827]">Job Hunt with AI (Alpha)</h1>
         </div>
 
         {/* Intelligent prompt card */}
@@ -431,7 +435,7 @@ export default function JobHuntPage() {
     return (
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
-          <h1 className="text-[24px] font-semibold text-[#111827]">Job Hunt with AI</h1>
+          <h1 className="text-[24px] font-semibold text-[#111827]">Job Hunt with AI (Alpha)</h1>
           <p className="text-sm text-[#6B7280] mt-1">Jobs tailored to your resume</p>
         </div>
         <Card className="text-center py-12">
@@ -465,9 +469,13 @@ export default function JobHuntPage() {
     return (
       <div className="max-w-2xl mx-auto text-center py-16">
         <div className="text-5xl mb-4">🔍</div>
-        <h1 className="text-[24px] font-semibold text-[#111827] mb-2">No jobs found</h1>
+        <h1 className="text-[24px] font-semibold text-[#111827] mb-2">
+          {unavailable ? "Jobs temporarily unavailable" : "No jobs found"}
+        </h1>
         <p className="text-sm text-[#6B7280] mb-2">
-          No results for your profile{filters.country ? ` in ${filters.country}` : ""}. Try adjusting your preferences.
+          {unavailable
+            ? "We couldn't fetch fresh jobs right now. Please try again in a few minutes."
+            : `No results for your profile${filters.country ? ` in ${filters.country}` : ""}. Try adjusting your preferences.`}
         </p>
         {debugInfo?.queries && (
           <div className="mb-4">
@@ -490,7 +498,7 @@ export default function JobHuntPage() {
     <div className="max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-[24px] font-semibold text-[#111827]">Job Hunt with AI</h1>
+          <h1 className="text-[24px] font-semibold text-[#111827]">Job Hunt with AI (Alpha)</h1>
           <p className="text-sm text-[#6B7280] mt-1">
             {jobs.length} jobs matched to your resume
             {profileContext?.roles && (

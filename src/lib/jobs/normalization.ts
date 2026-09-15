@@ -86,26 +86,18 @@ export function buildSearchQueries(profile: ExtractedProfile): string[] {
     if (profile.remote_ok) queries.push(`${role} remote`);
   }
 
-  // Secondary: broader role (use second target role if different, else generic alternative)
+  // Secondary: distinct alternate target role, else a remote/geo-broaden variant.
+  // No hardcoded generic fallback — broad queries cost provider calls without recall.
   const secondRole = profile.target_roles.length > 1
     ? normalizeRole(profile.target_roles[1])
-    : role === "software developer" ? "software engineer" : "software developer";
-  if (secondRole !== role) {
-    if (loc) {
-      queries.push(`${secondRole} ${loc}`);
-    } else {
-      queries.push(secondRole);
-    }
-  } else if (!profile.remote_ok && loc) {
-    // Add a remote variant as second query
+    : null;
+  if (secondRole && secondRole !== role) {
+    queries.push(loc ? `${secondRole} ${loc}` : secondRole);
+  } else if (loc && profile.remote_ok) {
     queries.push(`${role} remote`);
+  } else if (loc) {
+    queries.push(role); // broaden: drop location to widen recall
   }
 
-  // Fallback: always "software engineer" (broadest reliable JSearch query)
-  if (!queries.some((q) => q.includes("software engineer"))) {
-    queries.push("software engineer");
-  }
-
-  // Deduplicate
   return [...new Set(queries)].slice(0, 3);
 }

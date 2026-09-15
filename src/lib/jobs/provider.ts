@@ -25,6 +25,19 @@ export interface SearchQuery {
   employmentTypes?: string;
 }
 
+/**
+ * A single provider call result. Never collapses failure into `jobs: []` —
+ * the caller can distinguish "no results" from "rate limited" from "error".
+ */
+export interface JobSearchResult {
+  jobs: JobResult[];
+  rateLimited: boolean;
+  status: number; // 200, 429, 5xx, or 0 for network/timeout
+  retryAfterSeconds?: number;
+  quotaRemaining?: number;
+  quotaLimit?: number;
+}
+
 export interface JobSearchProvider {
-  searchJobs(params: SearchQuery): Promise<JobResult[]>;
+  searchJobs(params: SearchQuery): Promise<JobSearchResult>;
 }

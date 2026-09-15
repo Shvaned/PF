@@ -33,7 +33,7 @@ const INTERVIEW_TASKS: TaskTemplate[] = [
 ];
 
 const JOBHUNT_TASKS: TaskTemplate[] = [
-  { title: "Update job search profile", description: "Refresh your Job Hunt with AI profile. Make sure it reflects your latest resume and target role.", category: "jobhunt", priority: "medium", estimatedMinutes: 15, improvementImpact: JSON.stringify({ dimension: "marketCompetitivenessScore", points: 3 }) },
+  { title: "Update job search profile", description: "Refresh your Job Hunt with AI (Alpha) profile. Make sure it reflects your latest resume and target role.", category: "jobhunt", priority: "medium", estimatedMinutes: 15, improvementImpact: JSON.stringify({ dimension: "marketCompetitivenessScore", points: 3 }) },
   { title: "Research 5 target companies", description: "Identify 5 companies hiring for your role. Note their tech stack, culture, and 2 recent news items.", category: "jobhunt", priority: "medium", estimatedMinutes: 25, improvementImpact: JSON.stringify({ dimension: "marketCompetitivenessScore", points: 3 }) },
   { title: "Tailor resume for a specific job", description: "Pick one job posting and create a tailored version of your resume that matches its requirements.", category: "jobhunt", priority: "high", estimatedMinutes: 30, improvementImpact: JSON.stringify({ dimension: "marketCompetitivenessScore", points: 5 }) },
   { title: "Practice elevator pitch", description: "Write and rehearse a 30-second pitch that covers who you are, what you do, and what role you want.", category: "behavioral", priority: "medium", estimatedMinutes: 15, improvementImpact: JSON.stringify({ dimension: "behavioralConfidenceScore", points: 2 }) },

@@ -1,6 +1,34 @@
-import type { JobSearchProvider, JobResult, SearchQuery } from "./provider";
+import type { JobSearchProvider, JobResult, SearchQuery, JobSearchResult } from "./provider";
 
 const BASE = "https://jsearch.p.rapidapi.com";
+const EXTERNAL_TIMEOUT_MS = 8000;
+
+function parseRateLimitHeaders(headers: Headers): {
+  retryAfterSeconds?: number;
+  quotaRemaining?: number;
+  quotaLimit?: number;
+} {
+  const retryAfter = headers.get("retry-after");
+  const remaining =
+    headers.get("x-ratelimit-requests-remaining") ?? headers.get("x-ratelimit-remaining");
+  const limit =
+    headers.get("x-ratelimit-requests-limit") ?? headers.get("x-ratelimit-limit");
+
+  const out: { retryAfterSeconds?: number; quotaRemaining?: number; quotaLimit?: number } = {};
+  if (retryAfter) {
+    const n = parseInt(retryAfter, 10);
+    if (!isNaN(n)) out.retryAfterSeconds = n;
+  }
+  if (remaining) {
+    const n = parseInt(remaining, 10);
+    if (!isNaN(n)) out.quotaRemaining = n;
+  }
+  if (limit) {
+    const n = parseInt(limit, 10);
+    if (!isNaN(n)) out.quotaLimit = n;
+  }
+  return out;
+}
 
 export class JSearchProvider implements JobSearchProvider {
   private key: string;
@@ -10,7 +38,7 @@ export class JSearchProvider implements JobSearchProvider {
     this.key = apiKey;
   }
 
-  async searchJobs(params: SearchQuery): Promise<JobResult[]> {
+  async searchJobs(params: SearchQuery): Promise<JobSearchResult> {
     const url = new URL(`${BASE}/search`);
     url.searchParams.set("query", params.query);
     url.searchParams.set("page", String(params.page || 1));
@@ -19,68 +47,46 @@ export class JSearchProvider implements JobSearchProvider {
     if (params.remoteOnly) url.searchParams.set("remote_jobs_only", "true");
     if (params.employmentTypes) url.searchParams.set("employment_types", params.employmentTypes);
 
-    const finalUrl = url.toString();
-    console.log("[JSEARCH REQUEST]", {
-      url: finalUrl,
-      method: "GET",
-      hasKey: !!this.key,
-      hasHost: !!this.host,
-      params: {
-        query: params.query,
-        page: params.page || 1,
-        numPages: params.numPages || 3,
-        datePosted: params.datePosted,
-        remoteOnly: params.remoteOnly,
-        employmentTypes: params.employmentTypes,
-      },
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), EXTERNAL_TIMEOUT_MS);
 
-    const res = await fetch(finalUrl, {
-      headers: {
-        "X-RapidAPI-Key": this.key,
-        "X-RapidAPI-Host": this.host,
-      },
-    });
-
-    if (res.status === 429) {
-      console.warn("[JSEARCH] rate_limited");
-      return [];
-    }
-
-    if (!res.ok) {
-      const errBody = await res.text().catch(() => "unreadable");
-      console.error("[JSEARCH] error", {
-        status: res.status,
-        statusText: res.statusText,
-        body: errBody.slice(0, 500),
-        url: finalUrl,
+    try {
+      const res = await fetch(url.toString(), {
+        headers: {
+          "X-RapidAPI-Key": this.key,
+          "X-RapidAPI-Host": this.host,
+        },
+        signal: controller.signal,
       });
-      return [];
+
+      const rl = parseRateLimitHeaders(res.headers);
+
+      if (res.status === 429) {
+        console.warn("[JSEARCH] rate_limited", { retryAfter: rl.retryAfterSeconds, remaining: rl.quotaRemaining });
+        return { jobs: [], rateLimited: true, status: 429, ...rl };
+      }
+
+      if (!res.ok) {
+        console.error("[JSEARCH] error", { status: res.status, statusText: res.statusText });
+        return { jobs: [], rateLimited: false, status: res.status, ...rl };
+      }
+
+      const json = await res.json();
+      // JSearch returns: { status, data: { jobs: [...] } }
+      const rawJobs: any[] = json?.data?.jobs ?? json?.jobs ?? json?.data ?? [];
+      const jobs = rawJobs.map((raw: any) => this.mapJob(raw));
+      return { jobs, rateLimited: false, status: res.status, ...rl };
+    } catch (err: any) {
+      const aborted = err?.name === "AbortError";
+      console.error("[JSEARCH] request_failed", { aborted, message: err?.message });
+      return { jobs: [], rateLimited: false, status: aborted ? 408 : 0 };
+    } finally {
+      clearTimeout(timeout);
     }
+  }
 
-    const json = await res.json();
-
-    // JSearch returns: { status, data: { jobs: [...] } }
-    // Defensive: try data.jobs first, fall back to data (array), then raw jobs key
-    const jobs: any[] = json?.data?.jobs ?? json?.jobs ?? json?.data ?? [];
-    const rawCount = jobs.length;
-
-    console.log("[JSEARCH RESPONSE]", {
-      query: params.query,
-      status: res.status,
-      rawCount,
-      firstSample: rawCount > 0 ? {
-        title: jobs[0]?.job_title,
-        employer: jobs[0]?.employer_name,
-      } : null,
-    });
-
-    if (rawCount === 0) {
-      console.warn("[JSEARCH] empty_data", { keys: Object.keys(json || {}), dataKeys: Object.keys(json?.data || {}) });
-      return [];
-    }
-
-    return jobs.map((raw: any) => ({
+  private mapJob(raw: any): JobResult {
+    return {
       jobId: raw.job_id || "",
       title: raw.job_title || "Untitled",
       employer: raw.employer_name || "Unknown",
@@ -99,6 +105,6 @@ export class JSearchProvider implements JobSearchProvider {
       source: "jsearch",
       datePosted: raw.job_posted_at_datetime_utc || raw.job_posted_at || null,
       rawData: raw,
-    }));
+    };
   }
 }
