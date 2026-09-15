@@ -22,6 +22,8 @@ export default function ActiveMockInterviewPage({ params }: { params: Promise<{ 
   const { id } = use(params);
   const router = useRouter();
   const [questions, setQuestions] = useState<any[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,6 +34,8 @@ export default function ActiveMockInterviewPage({ params }: { params: Promise<{ 
         if (data.questions) {
           setQuestions(typeof data.questions === "string" ? JSON.parse(data.questions) : data.questions);
         }
+        if (data.currentIndex !== undefined) setCurrentIndex(data.currentIndex);
+        if (data.status) setStatus(data.status);
       })
       .catch(() => setError("Failed to load interview"))
       .finally(() => setLoading(false));
@@ -73,11 +77,21 @@ export default function ActiveMockInterviewPage({ params }: { params: Promise<{ 
   return (
     <div className="max-w-2xl mx-auto">
       <div className="mb-4">
-        <h1 className="text-[24px] font-semibold text-[#111827]">Mock Interview</h1>
-        <p className="text-sm text-[#6B7280]">{questions.length} questions • Answer each one aloud or type</p>
+        <div className="flex items-center justify-between">
+          <h1 className="text-[24px] font-semibold text-[#111827]">Mock Interview</h1>
+          <span className="text-[10px] text-[#22C55E] font-medium">Auto-saved</span>
+        </div>
+        {currentIndex > 0 && (
+          <p className="text-sm text-[#6B7280]">
+            Resuming from question {currentIndex + 1} of {questions.length}
+          </p>
+        )}
+        {currentIndex === 0 && (
+          <p className="text-sm text-[#6B7280]">{questions.length} questions • Answer each one aloud or type</p>
+        )}
       </div>
       <Card>
-        <MockChat interviewId={id} questions={questions} onComplete={handleComplete} />
+        <MockChat interviewId={id} questions={questions} startIndex={currentIndex} onComplete={handleComplete} />
       </Card>
     </div>
   );

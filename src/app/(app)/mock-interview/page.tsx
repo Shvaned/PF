@@ -23,6 +23,16 @@ function SetupForm() {
   const [loading, setLoading] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
+  // Active session check
+  const [activeSession, setActiveSession] = useState<any>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  useState(() => {
+    fetch("/api/mock-interview/start", { method: "GET" }).then((r) => r.json()).then((d) => {
+      if (d.activeSession) setActiveSession(d.activeSession);
+    }).catch(() => {}).finally(() => setCheckingSession(false));
+  });
+
   async function handleStart() {
     setLoading(true);
     try {
@@ -59,6 +69,23 @@ function SetupForm() {
         <h1 className="text-[24px] font-semibold text-[#111827]">Mock Interview</h1>
         <p className="text-sm text-[#6B7280] mt-1">Configure your practice session</p>
       </div>
+
+      {/* Active session — continue card */}
+      {activeSession && activeSession.status !== "completed" && (
+        <Card className="mb-5 border border-[#2563EB]/20 bg-gradient-to-r from-[#EFF6FF] to-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-[16px] font-medium text-[#111827]">Resume Interview</h3>
+              <p className="text-sm text-[#6B7280]">
+                Question {activeSession.currentIndex + 1} of {activeSession.questionCount}
+              </p>
+            </div>
+            <Button onClick={() => router.push(`/mock-interview/${activeSession.id}`)}>
+              Continue
+            </Button>
+          </div>
+        </Card>
+      )}
 
       <Card className="mb-5">
         <h3 className="text-[16px] font-medium text-[#111827] mb-4">Difficulty Level</h3>

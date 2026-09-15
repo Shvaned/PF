@@ -19,15 +19,16 @@ interface Message {
 interface Props {
   interviewId: string;
   questions: { id: string; question: string; type: string }[];
+  startIndex?: number;
   onComplete: (messages: Message[]) => void;
 }
 
-export default function MockChat({ interviewId, questions, onComplete }: Props) {
+export default function MockChat({ interviewId, questions, startIndex = 0, onComplete }: Props) {
   const [messages, setMessages] = useState<Message[]>([
-    { role: "ai", content: questions[0]?.question || "Let's begin." },
+    { role: "ai", content: questions[startIndex]?.question || "Let's begin." },
   ]);
   const [input, setInput] = useState("");
-  const [currentQ, setCurrentQ] = useState(0);
+  const [currentQ, setCurrentQ] = useState(startIndex);
   const [loading, setLoading] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 

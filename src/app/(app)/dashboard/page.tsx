@@ -7,8 +7,6 @@ import Button from "@/components/ui/Button";
 import { SkeletonCard } from "@/components/ui/Skeleton";
 import { Suspense } from "react";
 import DailyQuestion from "@/components/ui/DailyQuestion";
-import CareerChecklist from "@/components/ui/CareerChecklist";
-import AnswerTemplates from "@/components/ui/AnswerTemplates";
 import ReadinessCard from "@/components/ui/ReadinessCard";
 import PerformanceCard from "@/components/ui/PerformanceCard";
 import RoadmapCard from "@/components/ui/RoadmapCard";
@@ -99,27 +97,21 @@ export default async function DashboardPage() {
       {/* Recruiter Readiness */}
       <ReadinessCard />
 
-      {/* Weekly Report (below Readiness, above Challenge) */}
-      <WeeklyReportCard />
+      {/* 30-Day Roadmap — central habit loop */}
+      <RoadmapCard />
 
       {/* Daily Challenge */}
       <ChallengeCard />
 
-      {/* Daily Question */}
-      <div className="mb-6">
-        <DailyQuestion roleCategory={recentAnalysis?.jobCategory || null} />
-      </div>
-
-      {/* 30-Day Roadmap */}
-      <RoadmapCard />
-
       {/* Interview Performance */}
       <PerformanceCard />
 
-      {/* Career Checklist + Answer Templates */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
-        <CareerChecklist />
-        <AnswerTemplates />
+      {/* Weekly Report */}
+      <WeeklyReportCard />
+
+      {/* Daily Question */}
+      <div className="mb-6">
+        <DailyQuestion roleCategory={recentAnalysis?.jobCategory || null} />
       </div>
 
       {/* Bookmarked Questions */}

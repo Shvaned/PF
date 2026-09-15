@@ -5,6 +5,22 @@ import { logUsageAction } from "@/lib/usage";
 import { buildCompanyPrompt } from "@/lib/company-profiles";
 import { NextRequest } from "next/server";
 
+export async function GET() {
+  const user = await getCurrentUser();
+  if (!user) return Response.json({ error: "Sign in to continue" }, { status: 401 });
+
+  try {
+    const activeSession = await prisma.mockInterview.findFirst({
+      where: { userId: user.id, status: "in_progress" },
+      select: { id: true, currentIndex: true, questionCount: true, status: true, difficulty: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+    });
+    return Response.json({ activeSession });
+  } catch (error: any) {
+    return Response.json({ error: "Failed to check sessions" }, { status: 500 });
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const user = await getCurrentUser();

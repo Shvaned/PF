@@ -151,12 +151,17 @@ export async function generateRoadmap(userId: string): Promise<string> {
   let roadmap: any = null;
 
   try {
-    // Step 1: Archive existing active roadmap
+    // Step 1: Archive existing active roadmap (findFirst + update: Neon HTTP safe)
     console.log("[ROADMAP] step_1_archive");
-    await prisma.careerRoadmap.updateMany({
+    const existingActive = await prisma.careerRoadmap.findFirst({
       where: { userId, status: "active" },
-      data: { status: "archived" },
     });
+    if (existingActive) {
+      await prisma.careerRoadmap.update({
+        where: { id: existingActive.id },
+        data: { status: "archived" },
+      });
+    }
 
     // Step 2: Create roadmap (single statement, no nested writes)
     console.log("[ROADMAP] step_2_create_roadmap");

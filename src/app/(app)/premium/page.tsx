@@ -58,19 +58,53 @@ function PremiumContent() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <div className="mb-8 text-center">
-        <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-[#C084FC] to-[#8B5CF6] flex items-center justify-center">
-          <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
+    <div className="max-w-4xl mx-auto">
+      <div className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+        <div className="text-center md:text-left">
+          <div className="w-16 h-16 mx-auto md:mx-0 mb-4 rounded-2xl bg-gradient-to-br from-[#C084FC] to-[#8B5CF6] flex items-center justify-center">
+            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </div>
+          <h1 className="text-[24px] font-semibold text-[#111827] mb-2">PrepFit Premium</h1>
+          <p className="text-sm text-[#6B7280]">
+            {isPremium ? "You're on the Premium plan. Thank you for your support!" : "Get the most out of your interview preparation"}
+          </p>
         </div>
-        <h1 className="text-[24px] font-semibold text-[#111827] mb-2">PrepFit Premium</h1>
-        <p className="text-sm text-[#6B7280]">
-          {isPremium ? "You're on the Premium plan. Thank you for your support!" : "Get the most out of your interview preparation"}
-        </p>
+
+        <Card className="border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50/60 shadow-none">
+          <div className="inline-flex items-center gap-1.5 mb-2 px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 text-[11px] font-semibold uppercase tracking-wide">
+            <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm-.75 4.25a.75.75 0 011.5 0v4.5a.75.75 0 01-1.5 0v-4.5zM10 13.5a1 1 0 110 2 1 1 0 010-2z" />
+            </svg>
+            Early Access
+          </div>
+          <h3 className="text-[15px] font-semibold text-[#111827] mb-1">Premium is free during development</h3>
+          <p className="text-[13px] text-[#6B7280] mb-3">
+            Payments are in test mode. Subscribe for free using these test card details:
+          </p>
+          <dl className="text-[13px] space-y-1.5">
+            <div className="flex items-start justify-between gap-4">
+              <dt className="text-[#6B7280] shrink-0">Card number</dt>
+              <dd className="font-mono text-[#111827] text-right">4242 4242 4242 4242</dd>
+            </div>
+            <div className="flex items-start justify-between gap-4">
+              <dt className="text-[#6B7280] shrink-0">Expiration</dt>
+              <dd className="text-[#111827] text-right">Any future date (e.g. 12/35)</dd>
+            </div>
+            <div className="flex items-start justify-between gap-4">
+              <dt className="text-[#6B7280] shrink-0">CVC</dt>
+              <dd className="text-[#111827] text-right">Any 3 digits (e.g. 123)</dd>
+            </div>
+            <div className="flex items-start justify-between gap-4">
+              <dt className="text-[#6B7280] shrink-0">Name & address</dt>
+              <dd className="text-[#111827] text-right">Any dummy values</dd>
+            </div>
+          </dl>
+        </Card>
       </div>
 
+      <div className="max-w-2xl mx-auto">
       {checkoutSuccess && (
         <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-[14px] text-center">
           <svg className="w-8 h-8 mx-auto mb-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -134,6 +168,7 @@ function PremiumContent() {
           <Button href="/settings">Manage Subscription</Button>
         </div>
       )}
+      </div>
     </div>
   );
 }
